@@ -17,7 +17,7 @@ subplot_files <- list.files('data/fishnets', pattern = '_fishnet.shp$', full.nam
 
 # raster images are too large to be loaded to github but can be found on zenodo
 # 10.5281/zenodo.17089161
-raster_files <- list.files('data/raster_images', pattern = '_combined_image_masked.tif$', full.names = TRUE)
+raster_files <- list.files('data/raster_images', pattern = '_masked.tif$', full.names = TRUE)
 
 pixel_values <- extract_pixel_values(raster_files, subplot_files, c('blue', 'green', 'red', 'red_edge', 'nir'))
 
@@ -142,18 +142,7 @@ green_re_nir_cv$bands <- 'green_red.edge_nir'
 veg_bands_cv <- calculate_coefficient_of_variance(pixel_values, wavelengths = c('green', 'red', 'red_edge', 'nir'), min_points = 133609, rarefaction = T)
 veg_bands_cv$bands <- 'green_red_red.edge_nir'
 
-# CV of NDVI
-
-# read in ndvi files - can be created from raster images available at 10.5281/zenodo.17089161
-ndvi_files <- list.files('data/raster_images', pattern = '_combined_image_masked_NDVI.tif$', full.names = TRUE)
-
-# extract ndvi values
-ndvi_values <- extract_pixel_values_ndvi(ndvi_files, subplot_files, 'NDVI')
-
-ndvi_cv <- calculate_coefficient_of_variance(ndvi_values, 'NDVI', min_points = 133609, rarefaction = T)
-ndvi_cv$bands <- 'NDVI'
-
-cv_values <- rbind(ndvi_cv, red_edge_nir_cv, veg_bands_cv, green_re_nir_cv)
+cv_values <- rbind(red_edge_nir_cv, veg_bands_cv, green_re_nir_cv)
 
 # unique subplot id for each site
 cv_values <- cv_values %>%
@@ -178,7 +167,7 @@ cv_values <- spectral_taxonomic_diversity %>%
 # MODELS
 
 taxonomic_metrics <- c("species_richness", "exp_shannon", "inv_simpson", "pielou_evenness")
-band_combinations <- c("NDVI", "red.edge_nir", "green_red.edge_nir", "green_red_red.edge_nir")
+band_combinations <- c("red.edge_nir", "green_red.edge_nir", "green_red_red.edge_nir")
 
 # empty df to store results
 cv_biodiversity_model_results <- data.frame()
