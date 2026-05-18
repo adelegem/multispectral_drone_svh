@@ -178,8 +178,8 @@ create_masked_raster <- function(input, output_dir,
       }
     }
 
-    # Read the raster stack
-    raster_data <- stack(file)
+    # Read the multi-band raster
+    raster_data <- terra::rast(file)
 
     # Identify the bands for Red and NIR
     red <- raster_data[[red_band_index]]
@@ -195,8 +195,8 @@ create_masked_raster <- function(input, output_dir,
     raster_data_masked <- terra::mask(raster_data, mask, maskvalue = TRUE, updatevalue = NA)
 
     # Save the masked raster
-    masked_filename <- file.path(output_dir, paste0(file_path_sans_ext(basename(file)), '_masked.tif'))
-    terra::writeRaster(raster_data_masked, filename = masked_filename, format = "GTiff", overwrite = TRUE)
+    masked_filename <- file.path(output_dir, paste0(tools::file_path_sans_ext(basename(file)), '_masked.tif'))
+    terra::writeRaster(raster_data_masked, filename = masked_filename, filetype = "GTiff", overwrite = TRUE)
 
     print(paste("Masked raster saved to:", masked_filename))
   }
