@@ -32,10 +32,10 @@ Six phases. The two function refactors are bracketed by reproducibility work —
 
 0. **Phase 0 — test scaffolding** (no behavioural change). Capture baseline outputs and seed the rarefaction. Without this every later phase risks silent output drift; with it each phase is verified by a one-command snapshot diff.
 1. **Phase 1 — `raster` → `terra` migration.** Smallest scope, isolated to one function (`create_masked_raster()`) not called by the analysis scripts. Good first refactor — proves the test harness works on a near-zero-risk change.
-2. **Phase 2 — reproducibility groundwork.** Wire the rarefaction seed into the analysis scripts (so end-user runs reproduce), initialise `renv` to lock package versions, add LICENSE and CITATION.cff, document R version and system deps. Do this *before* saltbush so `renv.lock` captures the pre-migration state and any later output drift is attributable to the function swap, not to seed addition.
-3. **Phase 3 — `funx.R` → `saltbush` migration.** Highest behavioural risk but well bounded: one function at a time, verify each swap against the baseline snapshot before moving on. Easiest first: `calculate_field_diversity` → `extract_pixel_values` → `calculate_spectral_metrics`. Refresh `renv.lock` after install.
+2. **Phase 2 — reproducibility groundwork.** Wire the rarefaction seed into the analysis scripts (so end-user runs reproduce), add LICENSE and CITATION.cff, document R version and system deps. Done *before* the function refactors so any later output drift is attributable to the function swap, not to seed addition. Dependency pinning (`renv`) is deliberately deferred to Phase 5 — locking before saltbush / targets means constantly re-snapshotting through the refactors.
+3. **Phase 3 — `funx.R` → `saltbush` migration.** Highest behavioural risk but well bounded: one function at a time, verify each swap against the baseline snapshot before moving on. Easiest first: `calculate_field_diversity` → `extract_pixel_values` → `calculate_spectral_metrics`.
 4. **Phase 4 — `targets` pipeline.** Purely structural by this point. Phase 4a (factor out model loops, drop CSV side effects) verified by re-running snapshots; Phase 4b (`_targets.R`) is plumbing.
-5. **Phase 5 — publication prep.** Comprehensive README, rendered report (Rmd → HTML/PDF) that reproduces manuscript figures, Dockerfile based on `rocker/geospatial`, CI for Tier 1 tests, Zenodo–GitHub integration for a code DOI, output checksums as release artifacts.
+5. **Phase 5 — publication prep.** Lock dependencies with `renv` now that the package set is stable, comprehensive README, rendered report (Rmd → HTML/PDF) that reproduces manuscript figures, Dockerfile based on `rocker/geospatial`, CI for Tier 1 tests, Zenodo–GitHub integration for a code DOI, output checksums as release artifacts.
 
 Each phase ends with `testthat::test_dir("tests")` passing.
 
@@ -97,13 +97,14 @@ The two analysis scripts (`continuous_metrics_analysis.R`, `spectral_species_ana
 
 # Plan: reproducibility groundwork (Phase 2)
 
-Five cheap-but-load-bearing items between Phase 1 and Phase 3. Independent of the function refactors; address the things most likely to break a reader's replication six months after publication.
+Four cheap-but-load-bearing items between Phase 1 and Phase 3. Independent of the function refactors; address the things most likely to break a reader's replication six months after publication.
+
+Dependency pinning with `renv` is *deliberately not* in this phase — locking before saltbush/targets means constantly re-snapshotting as packages change. It lives in Phase 5 instead, once the dependency set has stabilised.
 
 1. **Wire the rarefaction seed into the analysis scripts.** Phase 0 added `seed = NULL` to `calculate_cv()` / `calculate_chv_nopca()` / `calculate_spectral_metrics()` / `calculate_coefficient_of_variance()`, but neither analysis script passes a value — so end-user runs of `continuous_metrics_analysis.R` still produce slightly different CV/CHV every time. Pick a documented seed (e.g. `42`), pass it at each call site, mention it in the README.
-2. **Initialise `renv`.** `renv::init()` from the project root, commit `renv.lock` + `renv/activate.R` + the .gitignore lines `renv` writes. After every dependency change (saltbush install in Phase 3, new packages added later), run `renv::snapshot()` and commit the updated lockfile. This is the single biggest reproducibility risk in an R analysis — without it, CRAN package evolution silently breaks the analysis.
-3. **Add a LICENSE.** Conventional split: CC-BY-4.0 for `data/` (matches the Zenodo deposit) and MIT or Apache-2.0 for code. A single root-level LICENSE file is fine if the data/code split is documented in the README.
-4. **Add CITATION.cff.** GitHub renders it as a "Cite this repository" button, and reference managers (Zotero, Mendeley) parse it. Cross-link the eventual code DOI when Phase 5 mints it.
-5. **Document R version + system deps** in a SETUP section of the README (even a stub README is fine here; the full rewrite is Phase 5). `sf` and `terra` need GDAL/PROJ; `geometry` needs C++17. `renv` does not solve this — system libraries live outside R.
+2. **Add a LICENSE.** Conventional split: CC-BY-4.0 for `data/` (matches the Zenodo deposit) and MIT or Apache-2.0 for code. A single root-level LICENSE file is fine if the data/code split is documented in the README.
+3. **Add CITATION.cff.** GitHub renders it as a "Cite this repository" button, and reference managers (Zotero, Mendeley) parse it. Cross-link the eventual code DOI when Phase 5 mints it.
+4. **Document R version + system deps** in a SETUP section of the README (even a stub README is fine here; the full rewrite is Phase 5). `sf` and `terra` need GDAL/PROJ; `geometry` needs C++17.
 
 Tier 1 tests pass at the end of this phase. Tier 2 passes too if the rasters are downloaded.
 
@@ -135,7 +136,7 @@ Most of the reusable functions in `funx.R` have been generalized into the `saltb
 
 ## Rollout
 
-1. **Install + verify.** `remotes::install_github("traitecoevo/saltbush")`. Diff each function signature against the `funx.R` version (`args(saltbush::extract_pixel_values)` vs `args(extract_pixel_values)`). Note any differences in argument names, defaults, or return shapes. Refresh `renv.lock` with `renv::snapshot()`.
+1. **Install + verify.** `remotes::install_github("traitecoevo/saltbush")`. Diff each function signature against the `funx.R` version (`args(saltbush::extract_pixel_values)` vs `args(extract_pixel_values)`). Note any differences in argument names, defaults, or return shapes.
 2. **Swap one call site at a time** and confirm the output is identical. Suggested order, easiest first:
    1. `calculate_field_diversity` (pure data, no rasters needed — fastest to validate)
    2. `extract_pixel_values`
@@ -228,11 +229,14 @@ The rendered manuscript-figure report is implemented in Phase 5 (publication pre
 
 Final-mile items before the code accompanies the manuscript. Most depend on the targets pipeline being in place so "run the analysis" is a one-liner.
 
-1. **Rewrite README.** Replace the current 2-line note with a real entry point: Prerequisites (R version, GDAL/PROJ, C++17 for `geometry`), Install (`renv::restore()`), Quick start (`targets::tar_make()`), Expected outputs and runtime, Data citation (Zenodo data DOI) + code citation (the new code DOI from item 6 below), License.
-2. **Rendered report.** `report.Rmd` that loads pipeline outputs via `tar_read()` and produces the manuscript's tables and figures. Wired into the pipeline as a `tar_render()` target so it rebuilds whenever upstream targets change. This is the artifact that ties the code in the repo to the claims in the paper.
-3. **Dockerfile.** Base off `rocker/geospatial:<R version>` (ships GDAL/PROJ pre-installed); call `renv::restore()` at build time; entrypoint runs `targets::tar_make()`. Lets reviewers and readers reproduce the analysis end-to-end without configuring a local R environment. Largest single reproducibility win after `renv`.
-4. **CI for Tier 1 tests.** GitHub Actions on push: spin up R against the locked `renv` environment, `Rscript -e 'testthat::test_dir("tests")'`. Catches dependency drift early. Don't try to run Tier 2/3 in CI — the rasters are 4.6 GB and GitHub-hosted runners won't tolerate it.
-5. **Output checksums as release artifacts.** Ship the Tier 1 baseline RDS (and optionally one Tier 2 fixture) alongside the GitHub release so readers can `digest::digest()` their replication output and confirm an exact match.
-6. **Code DOI via Zenodo–GitHub integration.** Enable the integration; cut a `v1.0.0` release; Zenodo mints a DOI for the code, separate from the data DOI (10.5281/zenodo.17089161). Cite both in the manuscript. Update CITATION.cff with the code DOI once it exists.
+1. **Lock dependencies with `renv`.** `renv::init()` from the project root, commit `renv.lock`, `renv/activate.R`, and the `.gitignore` lines `renv` writes. The package set is stable by this point (saltbush in, the targets pipeline driving installs) so a single snapshot captures the final state — no re-snapshotting churn. This is the single biggest reproducibility risk in an R analysis; doing it here means the lockfile that ships with the paper is the lockfile we tested against.
+2. **Rewrite README.** Replace the transitional README with a real entry point: Prerequisites (R version, GDAL/PROJ, C++17 for `geometry`), Install (`renv::restore()`), Quick start (`targets::tar_make()`), Expected outputs and runtime, Data citation (Zenodo data DOI) + code citation (the new code DOI from item 7 below), License.
+3. **Rendered report.** `report.Rmd` that loads pipeline outputs via `tar_read()` and produces the manuscript's tables and figures. Wired into the pipeline as a `tar_render()` target so it rebuilds whenever upstream targets change. This is the artifact that ties the code in the repo to the claims in the paper.
+4. **Dockerfile.** Base off `rocker/geospatial:<R version>` (ships GDAL/PROJ pre-installed); call `renv::restore()` at build time; entrypoint runs `targets::tar_make()`. Lets reviewers and readers reproduce the analysis end-to-end without configuring a local R environment.
+5. **CI for Tier 1 tests.** GitHub Actions on push: spin up R against the locked `renv` environment, `Rscript -e 'testthat::test_dir("tests")'`. Catches dependency drift early. Don't try to run Tier 2/3 in CI — the rasters are 4.6 GB and GitHub-hosted runners won't tolerate it.
+6. **Output checksums as release artifacts.** Ship the Tier 1 baseline RDS (and optionally one Tier 2 fixture) alongside the GitHub release so readers can `digest::digest()` their replication output and confirm an exact match.
+7. **Code DOI via Zenodo–GitHub integration.** Enable the integration; cut a `v1.0.0` release; Zenodo mints a DOI for the code, separate from the data DOI (10.5281/zenodo.17089161). Cite both in the manuscript. Update CITATION.cff with the code DOI once it exists.
+
+Order matters: `renv` must land before items 2 (README references `renv::restore()`), 4 (Dockerfile uses `renv::restore()`), and 5 (CI runs against the locked environment).
 
 Tier 1 + Tier 2 tests should pass against the locked environment after each item lands.
