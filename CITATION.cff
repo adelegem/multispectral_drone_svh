@@ -1,0 +1,40 @@
+cff-version: 1.2.0
+title: >-
+  multispectral_drone_svh: Code for applying the spectral variability
+  hypothesis to arid shrublands using multispectral drone imagery
+message: >-
+  If you use this software, please cite both the code (this CITATION
+  file) and the associated dataset (10.5281/zenodo.17089161).
+type: software
+authors:
+  - family-names: Gemmell
+    given-names: Adele
+    orcid: "https://orcid.org/0009-0005-2419-7287"
+  - family-names: Fisher
+    given-names: Adrian
+    orcid: "https://orcid.org/0000-0002-6903-8053"
+repository-code: "https://github.com/adelegem/multispectral_drone_svh"
+url: "https://github.com/adelegem/multispectral_drone_svh"
+license: MIT
+keywords:
+  - spectral variability hypothesis
+  - multispectral imagery
+  - drone remote sensing
+  - biodiversity
+  - arid shrublands
+  - AusPlots
+references:
+  - type: data
+    title: >-
+      Masked Multispectral Drone images of Ausplot Sites - March 2024
+    authors:
+      - family-names: Gemmell
+        given-names: Adele
+        orcid: "https://orcid.org/0009-0005-2419-7287"
+      - family-names: Fisher
+        given-names: Adrian
+        orcid: "https://orcid.org/0000-0002-6903-8053"
+    year: 2025
+    doi: 10.5281/zenodo.17089161
+    repository: "https://zenodo.org/records/17089161"
+    license: CC-BY-4.0

@@ -8,6 +8,10 @@ library(performance)
 library(glmmTMB)
 source('funx.R')
 
+# Seed used for all rarefaction draws below. Documented so readers can
+# reproduce the published CV / CHV values exactly.
+RAREFACTION_SEED <- 42
+
 # CALCULATE SPECTRAL METRICS
 
 # load subplot files
@@ -36,7 +40,8 @@ spectral_metrics <- calculate_spectral_metrics(pixel_values,
                                          c('blue', 'green', 'red', 'red_edge', 'nir'),
                                          rarefaction = T,
                                          n = 999,
-                                         min_points = 133609)
+                                         min_points = 133609,
+                                         seed = RAREFACTION_SEED)
 
 # log transform CHV to meet model reqs
 spectral_metrics$log.CHV <- log(spectral_metrics$CHV)
@@ -132,15 +137,15 @@ for (tax in taxonomic_metrics) {
 # calculate CV based on band combinations
 
 # red edge and nir
-red_edge_nir_cv <- calculate_coefficient_of_variance(pixel_values, wavelengths = c('red_edge', 'nir'), min_points = 133609, rarefaction = T)
+red_edge_nir_cv <- calculate_coefficient_of_variance(pixel_values, wavelengths = c('red_edge', 'nir'), min_points = 133609, rarefaction = T, seed = RAREFACTION_SEED)
 red_edge_nir_cv$bands <- 'red.edge_nir'
 
 # green, red-edge, nir
-green_re_nir_cv <- calculate_coefficient_of_variance(pixel_values, wavelengths = c('green', 'red_edge', 'nir'), min_points = 133609, rarefaction = T)
+green_re_nir_cv <- calculate_coefficient_of_variance(pixel_values, wavelengths = c('green', 'red_edge', 'nir'), min_points = 133609, rarefaction = T, seed = RAREFACTION_SEED)
 green_re_nir_cv$bands <- 'green_red.edge_nir'
 
 # green, red, red-edge, nir
-veg_bands_cv <- calculate_coefficient_of_variance(pixel_values, wavelengths = c('green', 'red', 'red_edge', 'nir'), min_points = 133609, rarefaction = T)
+veg_bands_cv <- calculate_coefficient_of_variance(pixel_values, wavelengths = c('green', 'red', 'red_edge', 'nir'), min_points = 133609, rarefaction = T, seed = RAREFACTION_SEED)
 veg_bands_cv$bands <- 'green_red_red.edge_nir'
 
 cv_values <- rbind(red_edge_nir_cv, veg_bands_cv, green_re_nir_cv)
