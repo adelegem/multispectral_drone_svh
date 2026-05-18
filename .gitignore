@@ -10,3 +10,9 @@ data_out/
 .RData
 .Ruserdata
 .Rproj.user/
+
+# macOS
+.DS_Store
+
+# Transient download logs
+data/raster_images_download.log

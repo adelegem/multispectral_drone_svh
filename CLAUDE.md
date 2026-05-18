@@ -26,58 +26,16 @@ The analysis tests whether spectral heterogeneity from drone-borne multispectral
 
 ---
 
-# Plan: migrate from `funx.R` to the `saltbush` package
-
-Medium-term goal: most of the reusable functions in `funx.R` have been generalized into the `saltbush` R package (`traitecoevo/saltbush` on GitHub). The analysis should call `saltbush::` functions instead of carrying local copies.
-
-## Mapping
-
-`saltbush` currently exports (at least) these four functions, all with the same names as their `funx.R` counterparts:
-
-| funx.R                          | saltbush                          | call sites                                          |
-| ------------------------------- | --------------------------------- | --------------------------------------------------- |
-| `create_multiband_image()`      | `saltbush::create_multiband_image()`      | (none in the two analysis scripts; used in preprocessing) |
-| `extract_pixel_values()`        | `saltbush::extract_pixel_values()`        | `continuous_metrics_analysis.R` line 22             |
-| `calculate_spectral_metrics()`  | `saltbush::calculate_spectral_metrics()`  | `continuous_metrics_analysis.R` line 34             |
-| `calculate_field_diversity()`   | `saltbush::calculate_field_diversity()`   | both scripts                                        |
-
-## What stays in `funx.R` for now
-
-`saltbush` doesn't (as of writing) expose everything the analysis uses. These need to stay local until either added upstream or kept as analysis-specific helpers:
-
-- `calculate_coefficient_of_variance()` — band-subset CV for the red-edge/NIR combos (`continuous_metrics_analysis.R` lines 134–143). Possibly a candidate for upstreaming to `saltbush` since it's a small extension of `calculate_cv`.
-- `find_optimum_thresholds()` and `create_masked_raster()` — used in the preprocessing step (not in the two analysis scripts shipped here).
-- `download_zenodo_rasters()` — analysis-specific; stays local.
-- The low-level metric helpers (`calculate_cv`, `calculate_sv`, `calculate_chv_nopca`) — keep until verified that `saltbush::calculate_spectral_metrics` exposes the same `rarefaction = TRUE, n = 999, min_points = ...` knobs.
-
-## Phased rollout
-
-1. **Install + verify.** `remotes::install_github("traitecoevo/saltbush")`. Diff each function signature against the `funx.R` version (`args(saltbush::extract_pixel_values)` vs `args(extract_pixel_values)`). Note any differences in argument names, defaults, or return shapes.
-2. **Swap one call site at a time** and confirm the output is identical. Suggested order, easiest first:
-   1. `calculate_field_diversity` (pure data, no rasters needed — fastest to validate)
-   2. `extract_pixel_values`
-   3. `calculate_spectral_metrics`
-3. **Slim `funx.R`** — delete functions that now have a `saltbush` equivalent in active use. Leave `# moved to saltbush` only if a comment is needed to explain something non-obvious; otherwise just delete.
-4. **Decide on upstreaming.** If `calculate_coefficient_of_variance` is genuinely just `calculate_cv` over a band subset, consider proposing it upstream instead of keeping a local fork.
-
-## Interaction with the targets plan
-
-Do the saltbush migration before (or as the first phase of) the targets refactor. Reasons:
-
-- The targets pipeline should call `saltbush::` functions directly, not `funx.R` copies of the same logic.
-- Phase 0 of the targets plan ("extract model loops into functions, drop side effects") is unaffected — those are analysis-specific and won't live in `saltbush`.
-- Swapping function sources is harder once a `_targets.R` is referencing them; do the dedup first.
-
----
-
 # Recommended order
 
-Three medium-term refactors are planned. Do them in this order:
+Six phases. The two function refactors are bracketed by reproducibility work — pin dependencies before swapping anything, polish for release after the structure stabilises.
 
 0. **Phase 0 — test scaffolding** (no behavioural change). Capture baseline outputs and seed the rarefaction. Without this every later phase risks silent output drift; with it each phase is verified by a one-command snapshot diff.
-1. **`raster` → `terra` migration.** Smallest scope, isolated to one function (`create_masked_raster()`) not called by the analysis scripts. Good first refactor — proves the test harness works on a near-zero-risk change.
-2. **`funx.R` → `saltbush` migration.** Highest behavioural risk but well bounded: one function at a time, verify each swap against the baseline snapshot before moving on. Easiest first: `calculate_field_diversity` → `extract_pixel_values` → `calculate_spectral_metrics`.
-3. **`targets` pipeline.** Purely structural by this point. Phase 3a (factor out model loops, drop CSV side effects) verified by re-running snapshots; Phase 3b (`_targets.R`) is plumbing.
+1. **Phase 1 — `raster` → `terra` migration.** Smallest scope, isolated to one function (`create_masked_raster()`) not called by the analysis scripts. Good first refactor — proves the test harness works on a near-zero-risk change.
+2. **Phase 2 — reproducibility groundwork.** Wire the rarefaction seed into the analysis scripts (so end-user runs reproduce), initialise `renv` to lock package versions, add LICENSE and CITATION.cff, document R version and system deps. Do this *before* saltbush so `renv.lock` captures the pre-migration state and any later output drift is attributable to the function swap, not to seed addition.
+3. **Phase 3 — `funx.R` → `saltbush` migration.** Highest behavioural risk but well bounded: one function at a time, verify each swap against the baseline snapshot before moving on. Easiest first: `calculate_field_diversity` → `extract_pixel_values` → `calculate_spectral_metrics`. Refresh `renv.lock` after install.
+4. **Phase 4 — `targets` pipeline.** Purely structural by this point. Phase 4a (factor out model loops, drop CSV side effects) verified by re-running snapshots; Phase 4b (`_targets.R`) is plumbing.
+5. **Phase 5 — publication prep.** Comprehensive README, rendered report (Rmd → HTML/PDF) that reproduces manuscript figures, Dockerfile based on `rocker/geospatial`, CI for Tier 1 tests, Zenodo–GitHub integration for a code DOI, output checksums as release artifacts.
 
 Each phase ends with `testthat::test_dir("tests")` passing.
 
@@ -85,12 +43,12 @@ Each phase ends with `testthat::test_dir("tests")` passing.
 
 # Testing strategy
 
-No tests exist on `main` today. We're adding them as the first refactor so the next three can be verified mechanically.
+No tests existed on `main` before this work. We're adding them as Phase 0 so subsequent refactors can be verified mechanically.
 
 ## Tiers
 
 - **Tier 1 — every change (~1 s).** Taxonomic-diversity snapshot. Uses only `data/ausplots_march_24.csv`, no rasters. Exercises `calculate_field_diversity()`, which both analysis scripts call. Fixture: `tests/fixtures/taxonomic_diversity_baseline.rds`.
-- **Tier 2 — per phase, manual (~minutes).** One-site spectral-metric snapshot on NSABHC0010 (smallest raster at 554 MB). Uses `n = 99` for rarefaction in tests, `n = 999` in the real analysis. Fixture generated once, re-checked after each function swap.
+- **Tier 2 — per phase, manual (~minutes).** One-site `extract_pixel_values` + `calculate_spectral_metrics` snapshots on NSABHC0010 (smallest raster at 554 MB). Uses `n = 99` for rarefaction in tests, `n = 999` in the real analysis. Fixture generated once, re-checked after each function swap. Lives in `tests/test-spectral-metrics.R` and is **gated by an env var** — skipped by default; opt in with `RUN_TIER2=true Rscript -e 'testthat::test_dir("tests")'`. The test also skips automatically if the Zenodo raster isn't downloaded or if `geometry` isn't installed, so adding it doesn't break Tier 1 runs on a fresh checkout.
 - **Tier 3 — release / merge to main (~hours).** Full end-to-end on all four sites. Acceptance check, not a per-commit gate.
 
 ## Tooling
@@ -101,7 +59,7 @@ No tests exist on `main` today. We're adding them as the first refactor so the n
 
 ## Reproducibility prerequisite
 
-`calculate_cv()` and `calculate_chv_nopca()` currently call `sample()` un-seeded, so identical inputs produce non-identical outputs. Phase 0 adds an optional `seed = NULL` argument to both (and to the `calculate_spectral_metrics` / `calculate_coefficient_of_variance` wrappers). Default `NULL` preserves current behaviour; tests pass `seed = 42` or similar to get exact equality.
+`calculate_cv()` and `calculate_chv_nopca()` currently call `sample()` un-seeded, so identical inputs produce non-identical outputs. Phase 0 adds an optional `seed = NULL` argument to both (and to the `calculate_spectral_metrics` / `calculate_coefficient_of_variance` wrappers). Default `NULL` preserves current behaviour; tests pass `seed = 42` or similar to get exact equality. Phase 2 wires that seed into the analysis scripts themselves.
 
 ## When a snapshot diff appears
 
@@ -113,7 +71,7 @@ A refactor changing outputs isn't automatically wrong — `saltbush::calculate_s
 
 ---
 
-# Plan: complete the `raster` → `terra` migration
+# Plan: `raster` → `terra` migration (Phase 1)
 
 Medium-term goal: drop the `raster` package as a dependency. Almost all of the codebase already uses `terra::` (`rast`, `mask`, `crop`, `vect`, `extract`, `predict`, `spatSample`, `writeRaster`). One holdout remains.
 
@@ -137,9 +95,65 @@ The two analysis scripts (`continuous_metrics_analysis.R`, `spectral_species_ana
 
 ---
 
-# Plan: refactor to a {targets} pipeline
+# Plan: reproducibility groundwork (Phase 2)
 
-Medium-term goal: replace the two top-level scripts with a `targets` workflow so expensive steps (n=999 rarefaction, 20-seed RF clustering) are cached and only re-run when inputs change.
+Five cheap-but-load-bearing items between Phase 1 and Phase 3. Independent of the function refactors; address the things most likely to break a reader's replication six months after publication.
+
+1. **Wire the rarefaction seed into the analysis scripts.** Phase 0 added `seed = NULL` to `calculate_cv()` / `calculate_chv_nopca()` / `calculate_spectral_metrics()` / `calculate_coefficient_of_variance()`, but neither analysis script passes a value — so end-user runs of `continuous_metrics_analysis.R` still produce slightly different CV/CHV every time. Pick a documented seed (e.g. `42`), pass it at each call site, mention it in the README.
+2. **Initialise `renv`.** `renv::init()` from the project root, commit `renv.lock` + `renv/activate.R` + the .gitignore lines `renv` writes. After every dependency change (saltbush install in Phase 3, new packages added later), run `renv::snapshot()` and commit the updated lockfile. This is the single biggest reproducibility risk in an R analysis — without it, CRAN package evolution silently breaks the analysis.
+3. **Add a LICENSE.** Conventional split: CC-BY-4.0 for `data/` (matches the Zenodo deposit) and MIT or Apache-2.0 for code. A single root-level LICENSE file is fine if the data/code split is documented in the README.
+4. **Add CITATION.cff.** GitHub renders it as a "Cite this repository" button, and reference managers (Zotero, Mendeley) parse it. Cross-link the eventual code DOI when Phase 5 mints it.
+5. **Document R version + system deps** in a SETUP section of the README (even a stub README is fine here; the full rewrite is Phase 5). `sf` and `terra` need GDAL/PROJ; `geometry` needs C++17. `renv` does not solve this — system libraries live outside R.
+
+Tier 1 tests pass at the end of this phase. Tier 2 passes too if the rasters are downloaded.
+
+---
+
+# Plan: migrate from `funx.R` to the `saltbush` package (Phase 3)
+
+Most of the reusable functions in `funx.R` have been generalized into the `saltbush` R package (`traitecoevo/saltbush` on GitHub). The analysis should call `saltbush::` functions instead of carrying local copies.
+
+## Mapping
+
+`saltbush` currently exports (at least) these four functions, all with the same names as their `funx.R` counterparts:
+
+| funx.R                          | saltbush                          | call sites                                          |
+| ------------------------------- | --------------------------------- | --------------------------------------------------- |
+| `create_multiband_image()`      | `saltbush::create_multiband_image()`      | (none in the two analysis scripts; used in preprocessing) |
+| `extract_pixel_values()`        | `saltbush::extract_pixel_values()`        | `continuous_metrics_analysis.R` line 22             |
+| `calculate_spectral_metrics()`  | `saltbush::calculate_spectral_metrics()`  | `continuous_metrics_analysis.R` line 34             |
+| `calculate_field_diversity()`   | `saltbush::calculate_field_diversity()`   | both scripts                                        |
+
+## What stays in `funx.R` for now
+
+`saltbush` doesn't (as of writing) expose everything the analysis uses. These need to stay local until either added upstream or kept as analysis-specific helpers:
+
+- `calculate_coefficient_of_variance()` — band-subset CV for the red-edge/NIR combos (`continuous_metrics_analysis.R` lines 134–143). Possibly a candidate for upstreaming to `saltbush` since it's a small extension of `calculate_cv`.
+- `find_optimum_thresholds()` and `create_masked_raster()` — used in the preprocessing step (not in the two analysis scripts shipped here).
+- `download_zenodo_rasters()` — analysis-specific; stays local.
+- The low-level metric helpers (`calculate_cv`, `calculate_sv`, `calculate_chv_nopca`) — keep until verified that `saltbush::calculate_spectral_metrics` exposes the same `rarefaction = TRUE, n = 999, min_points = ...` knobs.
+
+## Rollout
+
+1. **Install + verify.** `remotes::install_github("traitecoevo/saltbush")`. Diff each function signature against the `funx.R` version (`args(saltbush::extract_pixel_values)` vs `args(extract_pixel_values)`). Note any differences in argument names, defaults, or return shapes. Refresh `renv.lock` with `renv::snapshot()`.
+2. **Swap one call site at a time** and confirm the output is identical. Suggested order, easiest first:
+   1. `calculate_field_diversity` (pure data, no rasters needed — fastest to validate)
+   2. `extract_pixel_values`
+   3. `calculate_spectral_metrics`
+3. **Slim `funx.R`** — delete functions that now have a `saltbush` equivalent in active use. Leave `# moved to saltbush` only if a comment is needed to explain something non-obvious; otherwise just delete.
+4. **Decide on upstreaming.** If `calculate_coefficient_of_variance` is genuinely just `calculate_cv` over a band subset, consider proposing it upstream instead of keeping a local fork.
+
+## Interaction with the other plans
+
+- The targets pipeline (Phase 4) should call `saltbush::` functions directly, not `funx.R` copies of the same logic — so this phase must land before that one.
+- Phase 4a of the targets plan ("extract model loops into functions, drop side effects") is unaffected — those are analysis-specific and won't live in `saltbush`.
+- Swapping function sources is harder once a `_targets.R` is referencing them; do the dedup first.
+
+---
+
+# Plan: refactor to a {targets} pipeline (Phase 4)
+
+Replace the two top-level scripts with a `targets` workflow so expensive steps (n=999 rarefaction, 20-seed RF clustering) are cached and only re-run when inputs change.
 
 ## Why targets fits
 
@@ -188,17 +202,18 @@ spectral species (tar_map_rep over seeds = 1:20):
   mean_spectral_species        <- aggregate across seeds
   ss_models                    <- glmmTMB fits
 
-reporting:
+reporting (implemented in Phase 5):
   report                       <- tar_render("report.Rmd")
 ```
 
-## Phased rollout
+## Sub-phases
 
-1. **Phase 0 — prep refactors** (no targets yet). Items 1–5 above. Verify both scripts still produce identical outputs.
-2. **Phase 1 — minimal pipeline.** `_targets.R` with the file inputs, taxonomic diversity, and per-site pixel extraction. Confirms the plumbing works end-to-end on the cheap stuff.
-3. **Phase 2 — spectral metrics + continuous-metrics models.** Add CV/SV/CHV targets and the `tar_map` over taxonomic × spectral metrics.
-4. **Phase 3 — spectral species.** Add the 20-seed branching; consider `crew`/`future` for parallel execution.
-5. **Phase 4 — report.** `tar_render` an Rmd that produces the manuscript's tables and figures.
+1. **Phase 4a — prep refactors** (no targets yet). Items 1–5 above. Verify both scripts still produce identical outputs.
+2. **Phase 4b — minimal pipeline.** `_targets.R` with the file inputs, taxonomic diversity, and per-site pixel extraction. Confirms the plumbing works end-to-end on the cheap stuff.
+3. **Phase 4c — spectral metrics + continuous-metrics models.** Add CV/SV/CHV targets and the `tar_map` over taxonomic × spectral metrics.
+4. **Phase 4d — spectral species.** Add the 20-seed branching; consider `crew`/`future` for parallel execution.
+
+The rendered manuscript-figure report is implemented in Phase 5 (publication prep) as a `tar_render()` target within this pipeline.
 
 ## Working conventions during the transition
 
@@ -206,3 +221,18 @@ reporting:
 - Keep functions pure where possible: take data + parameters, return data. No `write.csv` or `dir.create` inside metric/model functions.
 - Prefer adding a new function over modifying a working one — keeps existing scripts runnable as a fallback during the refactor.
 - The Zenodo downloader is the canonical raster source. Don't reintroduce the legacy `data_out/combined_rasters/masked/2024/` path.
+
+---
+
+# Plan: publication prep (Phase 5)
+
+Final-mile items before the code accompanies the manuscript. Most depend on the targets pipeline being in place so "run the analysis" is a one-liner.
+
+1. **Rewrite README.** Replace the current 2-line note with a real entry point: Prerequisites (R version, GDAL/PROJ, C++17 for `geometry`), Install (`renv::restore()`), Quick start (`targets::tar_make()`), Expected outputs and runtime, Data citation (Zenodo data DOI) + code citation (the new code DOI from item 6 below), License.
+2. **Rendered report.** `report.Rmd` that loads pipeline outputs via `tar_read()` and produces the manuscript's tables and figures. Wired into the pipeline as a `tar_render()` target so it rebuilds whenever upstream targets change. This is the artifact that ties the code in the repo to the claims in the paper.
+3. **Dockerfile.** Base off `rocker/geospatial:<R version>` (ships GDAL/PROJ pre-installed); call `renv::restore()` at build time; entrypoint runs `targets::tar_make()`. Lets reviewers and readers reproduce the analysis end-to-end without configuring a local R environment. Largest single reproducibility win after `renv`.
+4. **CI for Tier 1 tests.** GitHub Actions on push: spin up R against the locked `renv` environment, `Rscript -e 'testthat::test_dir("tests")'`. Catches dependency drift early. Don't try to run Tier 2/3 in CI — the rasters are 4.6 GB and GitHub-hosted runners won't tolerate it.
+5. **Output checksums as release artifacts.** Ship the Tier 1 baseline RDS (and optionally one Tier 2 fixture) alongside the GitHub release so readers can `digest::digest()` their replication output and confirm an exact match.
+6. **Code DOI via Zenodo–GitHub integration.** Enable the integration; cut a `v1.0.0` release; Zenodo mints a DOI for the code, separate from the data DOI (10.5281/zenodo.17089161). Cite both in the manuscript. Update CITATION.cff with the code DOI once it exists.
+
+Tier 1 + Tier 2 tests should pass against the locked environment after each item lands.
