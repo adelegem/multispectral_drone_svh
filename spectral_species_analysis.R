@@ -4,12 +4,18 @@ library(terra)
 library(sf)
 library(dplyr)
 library(tidyr)
+library(readr)
 library(vegan)  # for diversity()
 library(randomForest)
 library(cluster)
 library(glmmTMB)
 library(performance)
 source('funx.R')
+
+# Survey data drives the taxonomic-diversity join near the end of this script.
+# Loaded up-front so the script runs stand-alone (not just after sourcing
+# continuous_metrics_analysis.R in the same session).
+survey_data <- read_csv('data/ausplots_march_24.csv', show_col_types = FALSE)
 
 # site names
 sites <- c("NSABHC0009", "NSABHC0010", "NSABHC0011", "NSABHC0012")
@@ -150,16 +156,24 @@ mean_spectral_species <- mean_spectral_species %>%
 # MODELS
 # spectral-species richness
 sr_model <- glmmTMB(species_richness ~ spectral_richness + (1 | site), data = mean_spectral_species)
-summary(model)
-r2_nakagawa(model)
+summary(sr_model)
+r2_nakagawa(sr_model)
 
 # spectral shannons diversity
 sh_model <- glmmTMB(shannon_diversity ~ shannon_spectral+ (1 | site), data = mean_spectral_species)
-summary(model)
-r2_nakagawa(model)
+summary(sh_model)
+r2_nakagawa(sh_model)
 
 # spectral simpsons diversity
 si_model <- glmmTMB(simpson_diversity ~ simpson_spectral + (1 | site), data = mean_spectral_species)
-summary(model)
-r2_nakagawa(model)
+summary(si_model)
+r2_nakagawa(si_model)
+
+# Persist outputs for downstream reporting. data_out/ is gitignored.
+if (!dir.exists("data_out")) dir.create("data_out", recursive = TRUE)
+saveRDS(spectral_species,      "data_out/spectral_species.rds")
+saveRDS(mean_spectral_species, "data_out/mean_spectral_species.rds")
+saveRDS(sr_model,              "data_out/sr_model.rds")
+saveRDS(sh_model,              "data_out/sh_model.rds")
+saveRDS(si_model,              "data_out/si_model.rds")
 

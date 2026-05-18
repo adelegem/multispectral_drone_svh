@@ -44,7 +44,7 @@ spectral_metrics <- calculate_spectral_metrics(pixel_values,
                                          seed = RAREFACTION_SEED)
 
 # log transform CHV to meet model reqs
-spectral_metrics$log.CHV <- log(spectral_metrics$CHV)
+spectral_metrics$log.CHV <- log(spectral_metrics$CHV_nopca)
 
 # CALCULATE TAXONOMIC METRICS
 
@@ -56,7 +56,7 @@ survey_data <- read_csv('data/ausplots_march_24.csv')
 taxonomic_diversity <- calculate_field_diversity(survey_data)$final_results
 
 # join taxonomic and spectral diversity
-spectral_taxonomic_diversity <- left_join(spectral_metrics, field_diversity, by = c('site', 'subplot_id'))
+spectral_taxonomic_diversity <- left_join(spectral_metrics, taxonomic_diversity, by = c('site', 'subplot_id'))
 
 # unique subplot_id for different sites
 spectral_taxonomic_diversity <- spectral_taxonomic_diversity %>%
@@ -233,4 +233,11 @@ for (band in band_combinations) {
     }
   }
 }
+
+# Persist outputs for downstream reporting. data_out/ is gitignored.
+if (!dir.exists("data_out")) dir.create("data_out", recursive = TRUE)
+saveRDS(spectral_taxonomic_diversity,        "data_out/spectral_taxonomic_diversity.rds")
+saveRDS(spectral_biodiversity_model_results, "data_out/spectral_biodiversity_model_results.rds")
+saveRDS(cv_values,                           "data_out/cv_values.rds")
+saveRDS(cv_biodiversity_model_results,       "data_out/cv_biodiversity_model_results.rds")
 
