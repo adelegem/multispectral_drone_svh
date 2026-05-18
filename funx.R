@@ -1,5 +1,44 @@
 
 
+# DOWNLOAD RASTERS FROM ZENODO -----------------------------------------------
+# Downloads the 4 masked multispectral rasters from Zenodo record 10.5281/zenodo.17089161
+# into `dest_dir`. Files already present (matching expected size within 1%) are skipped.
+# Total download is ~4.6 GB.
+download_zenodo_rasters <- function(dest_dir = "data/raster_images") {
+  files <- list(
+    list(name = "NSABHC0009_masked.tif",
+         url  = "https://zenodo.org/records/17089161/files/NSABHC0009_masked.tif?download=1",
+         size = 1.6e9),
+    list(name = "NSABHC0010_masked.tif",
+         url  = "https://zenodo.org/records/17089161/files/NSABHC0010_masked.tif?download=1",
+         size = 553.9e6),
+    list(name = "NSABHC0011_masked.tif",
+         url  = "https://zenodo.org/records/17089161/files/NSABHC0011_masked.tif?download=1",
+         size = 956.5e6),
+    list(name = "NSABHC0012_masked.tif",
+         url  = "https://zenodo.org/records/17089161/files/NSABHC0012_masked.tif?download=1",
+         size = 1.5e9)
+  )
+
+  if (!dir.exists(dest_dir)) dir.create(dest_dir, recursive = TRUE)
+
+  old_timeout <- getOption("timeout")
+  options(timeout = max(3600, old_timeout))
+  on.exit(options(timeout = old_timeout), add = TRUE)
+
+  for (f in files) {
+    dest <- file.path(dest_dir, f$name)
+    if (file.exists(dest) && file.info(dest)$size > 0.95 * f$size) {
+      message("Already present, skipping: ", dest)
+      next
+    }
+    message("Downloading ", f$name, " (~", round(f$size / 1e6), " MB) ...")
+    utils::download.file(f$url, destfile = dest, mode = "wb", quiet = FALSE)
+  }
+
+  invisible(list.files(dest_dir, pattern = "_masked\\.tif$", full.names = TRUE))
+}
+
 # COMBINE TIFS FUNCTION (FOR CREATING MULTI BAND IMAGE) -----------------------------------------------------------------------
 
 create_multiband_image <- function(mosaics_dir, desired_band_order){
@@ -295,7 +334,10 @@ calculate_cv <- function(pixel_values_df,
                          wavelengths,
                          rarefaction = TRUE,
                          min_points = NULL,
-                         n = 999) {
+                         n = 999,
+                         seed = NULL) {
+
+  if (!is.null(seed)) set.seed(seed)
 
   # Convert the dataframe to a data.table for efficiency
   setDT(pixel_values_df)
@@ -382,7 +424,10 @@ calculate_chv_nopca <- function(df,
                                 subplots = 'subplot_id',
                                 rarefaction = TRUE,
                                 min_points = NULL,
-                                n = 999) {
+                                n = 999,
+                                seed = NULL) {
+
+  if (!is.null(seed)) set.seed(seed)
 
   # Convert df to data.table for better performance
   setDT(df)
@@ -427,16 +472,17 @@ calculate_spectral_metrics <- function(pixel_values_df,
                                          wavelengths,
                                          min_points,
                                          n = 999,
-                                         rarefaction = TRUE) {  # Add rarefaction here
+                                         rarefaction = TRUE,
+                                         seed = NULL) {  # Add rarefaction here
     results <- list()
 
     for (site in unique(pixel_values_df$site)) {
       site_pixel_values <- pixel_values_df %>% filter(site == !!site)
 
       # Calculate metrics, pass rarefaction where needed
-      cv <- calculate_cv(site_pixel_values, wavelengths = wavelengths, rarefaction = rarefaction, n = n, min_points = min_points)
+      cv <- calculate_cv(site_pixel_values, wavelengths = wavelengths, rarefaction = rarefaction, n = n, min_points = min_points, seed = seed)
       sv <- calculate_sv(site_pixel_values, wavelengths = wavelengths)
-      chv <- calculate_chv_nopca(site_pixel_values, wavelengths, rarefaction = rarefaction, min_points = min_points)
+      chv <- calculate_chv_nopca(site_pixel_values, wavelengths, rarefaction = rarefaction, min_points = min_points, n = n, seed = seed)
 
       results[[site]] <- list(CV = cv, SV = sv, CHV = chv)
     }
@@ -460,14 +506,15 @@ calculate_coefficient_of_variance <- function(pixel_values_df,
                                        wavelengths,
                                        min_points,
                                        n = 999,
-                                       rarefaction = TRUE) {  # Add rarefaction here
+                                       rarefaction = TRUE,
+                                       seed = NULL) {  # Add rarefaction here
   results <- list()
 
   for (site in unique(pixel_values_df$site)) {
     site_pixel_values <- pixel_values_df %>% filter(site == !!site)
 
     # Calculate CV, pass rarefaction where needed
-    cv <- calculate_cv(site_pixel_values, wavelengths = wavelengths, rarefaction = rarefaction, n = n, min_points = min_points)
+    cv <- calculate_cv(site_pixel_values, wavelengths = wavelengths, rarefaction = rarefaction, n = n, min_points = min_points, seed = seed)
     results[[site]] <- list(CV = cv)
   }
 

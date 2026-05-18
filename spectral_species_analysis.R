@@ -9,12 +9,15 @@ library(randomForest)
 library(cluster)
 library(glmmTMB)
 library(performance)
+source('funx.R')
 
 # site names
 sites <- c("NSABHC0009", "NSABHC0010", "NSABHC0011", "NSABHC0012")
 
-# paths
-image_paths <- paste0("data_out/combined_rasters/masked/2024/", sites, "_combined_image_masked.tif")
+# paths — rasters are gitignored; download_zenodo_rasters() fetches them from
+# Zenodo (10.5281/zenodo.17089161) into data/raster_images/ if not already present.
+download_zenodo_rasters("data/raster_images")
+image_paths <- paste0("data/raster_images/", sites, "_masked.tif")
 
 # fishnet paths
 fishnet_paths <- paste0("data/fishnets/", sites, "_fishnet.shp")

@@ -15,9 +15,10 @@ subplot_files <- list.files('data/fishnets', pattern = '_fishnet.shp$', full.nam
 
 # load files
 
-# raster images are too large to be loaded to github but can be found on zenodo
-# 10.5281/zenodo.17089161
-raster_files <- list.files('data/raster_images', pattern = '_masked.tif$', full.names = TRUE)
+# raster images are too large to be loaded to github (gitignored locally).
+# download_zenodo_rasters() fetches them from Zenodo (10.5281/zenodo.17089161)
+# into data/raster_images/, skipping any that are already present.
+raster_files <- download_zenodo_rasters("data/raster_images")
 
 pixel_values <- extract_pixel_values(raster_files, subplot_files, c('blue', 'green', 'red', 'red_edge', 'nir'))
 

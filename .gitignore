@@ -1,0 +1,12 @@
+# Zenodo raster downloads (10.5281/zenodo.17089161) — too large for git
+data/raster_images/
+
+# Intermediate/derived outputs
+data_out/
+
+# R / RStudio
+.Rhistory
+.Rapp.history
+.RData
+.Ruserdata
+.Rproj.user/
