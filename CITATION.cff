@@ -10,9 +10,17 @@ authors:
   - family-names: Gemmell
     given-names: Adele
     orcid: "https://orcid.org/0009-0005-2419-7287"
+  - family-names: Cornwell
+    given-names: Will
+    orcid: "https://orcid.org/0000-0003-4080-4073"
+    affiliation: "University of New South Wales"
   - family-names: Fisher
     given-names: Adrian
     orcid: "https://orcid.org/0000-0002-6903-8053"
+  - family-names: Mesaglio
+    given-names: Thomas
+    orcid: "https://orcid.org/0000-0002-1096-6066"
+    affiliation: "University of New South Wales"
 repository-code: "https://github.com/adelegem/multispectral_drone_svh"
 url: "https://github.com/adelegem/multispectral_drone_svh"
 license: MIT
@@ -31,9 +39,17 @@ references:
       - family-names: Gemmell
         given-names: Adele
         orcid: "https://orcid.org/0009-0005-2419-7287"
+      - family-names: Cornwell
+        given-names: Will
+        orcid: "https://orcid.org/0000-0003-4080-4073"
+        affiliation: "University of New South Wales"
       - family-names: Fisher
         given-names: Adrian
         orcid: "https://orcid.org/0000-0002-6903-8053"
+      - family-names: Mesaglio
+        given-names: Thomas
+        orcid: "https://orcid.org/0000-0002-1096-6066"
+        affiliation: "University of New South Wales"
     year: 2025
     doi: 10.5281/zenodo.17089161
     repository: "https://zenodo.org/records/17089161"
