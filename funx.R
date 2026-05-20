@@ -421,37 +421,29 @@ calculate_chv_nopca <- function(df,
   return(results)
 }
 
-## FUNCTION FOR CALCULATING ALL METRICS
+# Wraps saltbush::calculate_spectral_metrics to preserve the analysis-specific
+# column names (site/subplot_id/CHV_nopca) used by the rest of the pipeline.
 calculate_spectral_metrics <- function(pixel_values_df,
-                                         wavelengths,
-                                         min_points,
-                                         n = 999,
-                                         rarefaction = TRUE,
-                                         seed = NULL) {  # Add rarefaction here
-    results <- list()
+                                       wavelengths,
+                                       min_points,
+                                       n = 999,
+                                       rarefaction = TRUE,
+                                       seed = NULL) {
+  renamed <- pixel_values_df %>%
+    rename(site_name = site, aoi_id = subplot_id)
 
-    for (site in unique(pixel_values_df$site)) {
-      site_pixel_values <- pixel_values_df %>% filter(site == !!site)
+  out <- saltbush::calculate_spectral_metrics(
+    renamed,
+    wavelengths = wavelengths,
+    rarefaction = rarefaction,
+    min_points  = min_points,
+    n           = n,
+    seed        = seed
+  )
 
-      # Calculate metrics, pass rarefaction where needed
-      cv <- calculate_cv(site_pixel_values, wavelengths = wavelengths, rarefaction = rarefaction, n = n, min_points = min_points, seed = seed)
-      sv <- calculate_sv(site_pixel_values, wavelengths = wavelengths)
-      chv <- calculate_chv_nopca(site_pixel_values, wavelengths, rarefaction = rarefaction, min_points = min_points, n = n, seed = seed)
-
-      results[[site]] <- list(CV = cv, SV = sv, CHV = chv)
-    }
-
-    combined_cv <- bind_rows(lapply(results, function(x) x$CV), .id = 'site')
-    combined_sv <- bind_rows(lapply(results, function(x) x$SV), .id = 'site')
-    combined_chv <- bind_rows(lapply(results, function(x) x$CHV), .id = 'site')
-
-    # create a data frame for combined metrics
-    combined_metrics <- combined_cv %>%
-      left_join(combined_sv, by = c("site", "subplot_id")) %>%
-      left_join(combined_chv, by = c("site", "subplot_id"))
-
-
-    return(combined_metrics)
+  out %>%
+    rename(subplot_id = aoi_id, CHV_nopca = CHV) %>%
+    dplyr::select(site, subplot_id, CV, SV, CHV_nopca)
 }
 
 # CALCULATE CV ONLY
