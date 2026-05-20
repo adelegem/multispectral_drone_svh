@@ -138,14 +138,15 @@ Most of the reusable functions in `funx.R` have been generalized into the `saltb
 | `calculate_spectral_metrics()`  | `saltbush::calculate_spectral_metrics()`  | `continuous_metrics_analysis.R` line 34             |
 | `calculate_field_diversity()`   | `saltbush::calculate_field_diversity()`   | both scripts                                        |
 
-## What stays in `funx.R` for now
+## What stays in `funx.R`
 
-`saltbush` doesn't (as of writing) expose everything the analysis uses. These need to stay local until either added upstream or kept as analysis-specific helpers:
+`saltbush` doesn't expose everything the analysis uses. These stay local as analysis-specific helpers:
 
-- `calculate_coefficient_of_variance()` — band-subset CV for the red-edge/NIR combos (`continuous_metrics_analysis.R` lines 134–143). Possibly a candidate for upstreaming to `saltbush` since it's a small extension of `calculate_cv`.
+- `calculate_coefficient_of_variance()` — band-subset CV for the red-edge/NIR combos (`continuous_metrics_analysis.R` lines 140–148). Decided to keep local rather than upstream; calls the local `calculate_cv` so that helper stays too.
+- `calculate_cv` — local copy retained solely because `calculate_coefficient_of_variance` still calls it. `calculate_sv` and `calculate_chv_nopca` (and the abandoned `calculate_chv`) were deleted once `calculate_spectral_metrics` was swapped to saltbush.
 - `find_optimum_thresholds()` and `create_masked_raster()` — used in the preprocessing step (not in the two analysis scripts shipped here).
 - `download_zenodo_rasters()` — analysis-specific; stays local.
-- The low-level metric helpers (`calculate_cv`, `calculate_sv`, `calculate_chv_nopca`) — keep until verified that `saltbush::calculate_spectral_metrics` exposes the same `rarefaction = TRUE, n = 999, min_points = ...` knobs.
+- `bin_survey_subplots()` — AusPlots-specific transect/point → 5×5 subplot grid; used by the local `calculate_field_diversity` wrapper.
 
 ## Rollout
 
@@ -155,7 +156,7 @@ Most of the reusable functions in `funx.R` have been generalized into the `saltb
    2. `extract_pixel_values`
    3. `calculate_spectral_metrics`
 3. **Slim `funx.R`** — delete functions that now have a `saltbush` equivalent in active use. Leave `# moved to saltbush` only if a comment is needed to explain something non-obvious; otherwise just delete.
-4. **Decide on upstreaming.** If `calculate_coefficient_of_variance` is genuinely just `calculate_cv` over a band subset, consider proposing it upstream instead of keeping a local fork.
+4. **Upstreaming decision** — `calculate_coefficient_of_variance` (band-subset CV) is kept local rather than upstreamed. Revisit if a future saltbush release exposes a `bands =` knob on `calculate_cv`.
 
 ## Interaction with the other plans
 
