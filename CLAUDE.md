@@ -8,6 +8,7 @@ The analysis tests whether spectral heterogeneity from drone-borne multispectral
 
 - `continuous_metrics_analysis.R` — extracts pixel values per subplot, computes coefficient of variation (CV), spectral variance (SV), and convex hull volume (CHV) using rarefaction (n=999); fits per-taxonomic-metric × per-spectral-metric mixed models (`glmmTMB`, site as random effect). Also computes CV across band subsets (red-edge+NIR, etc.).
 - `spectral_species_analysis.R` — random-forest + k-means clustering of pixels into "spectral species" (k=40), repeated over 20 seeds; computes spectral richness / Shannon / Simpson per subplot; fits mixed models against field diversity.
+- `figures-for-publication.R` — reads `data_out/` outputs from `continuous_metrics_analysis.R` and produces the two manuscript figures: Figure 5 (`masked_24_plot.png`, spectral vs taxonomic scatter with significant-relationship overlays) and Figure 6 (`cv_band_combinations_plot.png`, CV beta coefficients across band combinations). Re-fits the 12 mixed models inline to get predicted lines for the overlays — redundant with `data_out/model_fits/`; the targets refactor (Phase 4) should reuse the cached fits via `predict()`.
 - `funx.R` — all the reusable functions: raster I/O, masking, pixel extraction, the three spectral-metric calculators, `calculate_field_diversity` (taxonomic diversity from AusPlots transect hits), and `download_zenodo_rasters` (added recently — auto-fetches the 4 GeoTIFFs from Zenodo).
 - `data/ausplots_march_24.csv` — field survey hits.
 - `data/fishnets/NSABHC00{09..12}_fishnet.shp` — the 5×5 subplot grids per site.
@@ -18,10 +19,11 @@ The analysis tests whether spectral heterogeneity from drone-borne multispectral
   - `model_checks/` — diagnostic per-model `.rds` (mixed-effect specification only) plus `model_checks.log`. Use these to inspect random-effect variances before deciding whether a refit is warranted.
   - `model_fits/` — final fits used for reporting. One `.rds` per taxonomic × spectral metric, suffixed `_mixed` or `_fixed` depending on whether the singular-fit refit (see Conventions) kicked in, plus `model_summaries.csv` and `top_significant_models.csv`.
 - `reports/` — gitignored; rendered HTML reports + their sources (currently `interim_progress.Rmd` / `.html`). Read this for the current running state of the analysis.
+- `maps_graphs/` — gitignored; output directory for `figures-for-publication.R` (`masked_24_plot.png`, `cv_band_combinations_plot.png`).
 
 ## Required R packages
 
-`sf`, `terra`, `tidyverse`, `vegan`, `data.table`, `performance`, `glmmTMB`, `geometry` (CHV), `randomForest` + `cluster` (spectral species), `pROC` (mask threshold finder in `funx.R`).
+`sf`, `terra`, `tidyverse`, `vegan`, `data.table`, `performance`, `glmmTMB`, `geometry` (CHV), `randomForest` + `cluster` (spectral species), `pROC` (mask threshold finder in `funx.R`), `ggnewscale` + `ggh4x` (`figures-for-publication.R` only), `saltbush` (`traitecoevo/saltbush`, ≥ `aece6a1`).
 
 ## Conventions
 
@@ -183,8 +185,12 @@ The existing functions in `funx.R` are mostly pure and reusable. The two analysi
 3. **Make spectral-species per-seed callable.** Split `get_spectral_species()` into `spectral_species_one_seed(rasters, fishnets, seed, k, sample_size)` returning one tibble. The 20-seed iteration becomes a `tar_map_rep(seeds = 1:20)`.
 4. **Move every shared function into `funx.R`.** Both scripts should `source('funx.R')` (already done in both as of the Zenodo download work).
 5. **Consolidate the site-prefix logic** (`E`/`G`/`S`/`C`) into a small helper so it's not duplicated.
+6. **Extract figure generation** from `figures-for-publication.R` into `make_figure_5(metrics, model_results, fits)` and `make_figure_6(model_results, cv_band_results)`, each returning a ggplot object (no `ggsave`, no `dir.create` — `targets` handles persistence via `format = "file"` or `tarchetypes::tar_render`). Two adjacent cleanups while doing this: (a) drop the inline 12-model re-fit in Figure 5 and use cached fits from `data_out/model_fits/` via `predict()`, and (b) decide whether the figures live as their own `tar_target`s or get inlined into the Phase 5 `report.Rmd` (probably the latter, since the figures and the manuscript narrative will move together).
 
 ## Target graph (sketch)
+
+This ASCII sketch is provisional. Once Phase 4b lands a real `_targets.R`, `targets::tar_visnetwork()` renders the live DAG interactively, and `targets::tar_mermaid()` emits a Mermaid string suitable for embedding in CLAUDE.md or the rendered report — at which point this sketch should be deleted in favour of the generated diagram.
+
 
 ```
 file targets:
@@ -214,8 +220,12 @@ spectral species (tar_map_rep over seeds = 1:20):
   mean_spectral_species        <- aggregate across seeds
   ss_models                    <- glmmTMB fits
 
+figures (currently in figures-for-publication.R):
+  fig_5_masked_24              <- make_figure_5(spectral_taxonomic, model_results, model_fits)
+  fig_6_cv_bands               <- make_figure_6(model_results, cv_band_combos)
+
 reporting (implemented in Phase 5):
-  report                       <- tar_render("report.Rmd")
+  report                       <- tar_render("report.Rmd")  # likely absorbs the figures above
 ```
 
 ## Sub-phases
