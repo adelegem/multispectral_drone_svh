@@ -9,7 +9,7 @@ The analysis tests whether spectral heterogeneity from drone-borne multispectral
 - `continuous_metrics_analysis.R` — extracts pixel values per subplot, computes coefficient of variation (CV), spectral variance (SV), and convex hull volume (CHV) using rarefaction (n=999); fits per-taxonomic-metric × per-spectral-metric mixed models (`glmmTMB`, site as random effect). Also computes CV across band subsets (red-edge+NIR, etc.).
 - `spectral_species_analysis.R` — random-forest + k-means clustering of pixels into "spectral species" (k=40), repeated over 20 seeds; computes spectral richness / Shannon / Simpson per subplot; fits mixed models against field diversity.
 - `figures-for-publication.R` — reads `data_out/` outputs from `continuous_metrics_analysis.R` and produces the two manuscript figures: Figure 5 (`masked_24_plot.png`, spectral vs taxonomic scatter with significant-relationship overlays) and Figure 6 (`cv_band_combinations_plot.png`, CV beta coefficients across band combinations). Re-fits the 12 mixed models inline to get predicted lines for the overlays — redundant with `data_out/model_fits/`; the targets refactor (Phase 4) should reuse the cached fits via `predict()`.
-- `funx.R` — all the reusable functions: raster I/O, masking, pixel extraction, the three spectral-metric calculators, `calculate_field_diversity` (taxonomic diversity from AusPlots transect hits), and `download_zenodo_rasters` (added recently — auto-fetches the 4 GeoTIFFs from Zenodo).
+- `funx.R` — analysis-specific helpers and saltbush-delegating wrappers. The three "main" reusable functions (`calculate_field_diversity`, `extract_pixel_values`, `calculate_spectral_metrics`) are now thin wrappers around `saltbush::` equivalents — the wrappers handle AusPlots-specific subplot binning and the project's `subplot_id` / `CHV_nopca` column conventions. What's still genuinely local: `calculate_coefficient_of_variance` (band-subset CV; no saltbush equivalent), `calculate_cv` (called only by that), `bin_survey_subplots` (transect → 5×5 grid), `download_zenodo_rasters` (Zenodo fetcher), and the preprocessing-only helpers `create_masked_raster` / `find_optimum_thresholds`.
 - `data/ausplots_march_24.csv` — field survey hits.
 - `data/fishnets/NSABHC00{09..12}_fishnet.shp` — the 5×5 subplot grids per site.
 - `data/raster_images/` — gitignored; populated on first run by `download_zenodo_rasters()` from Zenodo 10.5281/zenodo.17089161 (~4.4 GB, 4 files: 0009 1.5 GB, 0010 554 MB, 0011 957 MB, 0012 1.5 GB).
@@ -39,16 +39,18 @@ For the running state of the analysis (which scripts have been run end-to-end, c
 
 ---
 
-# Recommended order
+# Phase plan
 
-Six phases. The two function refactors are bracketed by reproducibility work — pin dependencies before swapping anything, polish for release after the structure stabilises.
+Six phases total. Phases 0–3 are complete (see `git log`); Phases 4 and 5 remain. The two function refactors (Phases 1 and 3) are bracketed by reproducibility work — seed wiring before swapping anything, `renv` lock after the structure stabilises.
 
-0. **Phase 0 — test scaffolding** (no behavioural change). Capture baseline outputs and seed the rarefaction. Without this every later phase risks silent output drift; with it each phase is verified by a one-command snapshot diff.
-1. **Phase 1 — `raster` → `terra` migration.** Smallest scope, isolated to one function (`create_masked_raster()`) not called by the analysis scripts. Good first refactor — proves the test harness works on a near-zero-risk change.
-2. **Phase 2 — reproducibility groundwork.** Wire the rarefaction seed into the analysis scripts (so end-user runs reproduce), add LICENSE and CITATION.cff, document R version and system deps. Done *before* the function refactors so any later output drift is attributable to the function swap, not to seed addition. Dependency pinning (`renv`) is deliberately deferred to Phase 5 — locking before saltbush / targets means constantly re-snapshotting through the refactors.
-3. **Phase 3 — `funx.R` → `saltbush` migration.** Highest behavioural risk but well bounded: one function at a time, verify each swap against the baseline snapshot before moving on. Easiest first: `calculate_field_diversity` → `extract_pixel_values` → `calculate_spectral_metrics`.
-4. **Phase 4 — `targets` pipeline.** Purely structural by this point. Phase 4a (factor out model loops, drop CSV side effects) verified by re-running snapshots; Phase 4b (`_targets.R`) is plumbing.
-5. **Phase 5 — publication prep.** Lock dependencies with `renv` now that the package set is stable, comprehensive README, rendered report (Rmd → HTML/PDF) that reproduces manuscript figures, Dockerfile based on `rocker/geospatial`, CI for Tier 1 tests, Zenodo–GitHub integration for a code DOI, output checksums as release artifacts.
+| Phase | Status | Summary |
+|---|---|---|
+| 0 — Test scaffolding | ✓ done | `testthat` + Tier 1/2 fixtures + `seed = NULL` on rarefaction functions |
+| 1 — `raster` → `terra` | ✓ done | `create_masked_raster()` migrated; no `raster::` calls remain |
+| 2 — Reproducibility groundwork | ✓ done | seed wired into analysis, LICENSE (MIT + CC-BY-4.0), CITATION.cff, README setup |
+| 3 — `funx.R` → `saltbush` | ✓ done | three wrappers delegate to saltbush; band-subset CV stays local |
+| 4 — `targets` pipeline | planned | see below |
+| 5 — Publication prep | planned | see below |
 
 Each phase ends with `testthat::test_dir("tests")` passing.
 
@@ -56,7 +58,7 @@ Each phase ends with `testthat::test_dir("tests")` passing.
 
 # Testing strategy
 
-No tests existed on `main` before this work. We're adding them as Phase 0 so subsequent refactors can be verified mechanically.
+Phase 0 added `testthat` so subsequent refactors are verified mechanically by snapshot diff.
 
 ## Tiers
 
@@ -70,10 +72,6 @@ No tests existed on `main` before this work. We're adding them as Phase 0 so sub
 - Snapshots checked into the repo as `.rds` files in `tests/fixtures/` — small (summary tibbles, not rasters).
 - Project is not an R package (no `DESCRIPTION`), so tests live in flat `tests/` (no `tests/testthat/` subdir). Run with `Rscript -e 'testthat::test_dir("tests")'`.
 
-## Reproducibility prerequisite
-
-`calculate_cv()` and `calculate_chv_nopca()` currently call `sample()` un-seeded, so identical inputs produce non-identical outputs. Phase 0 adds an optional `seed = NULL` argument to both (and to the `calculate_spectral_metrics` / `calculate_coefficient_of_variance` wrappers). Default `NULL` preserves current behaviour; tests pass `seed = 42` or similar to get exact equality. Phase 2 wires that seed into the analysis scripts themselves.
-
 ## When a snapshot diff appears
 
 A refactor changing outputs isn't automatically wrong — `saltbush::calculate_spectral_metrics` may legitimately differ from the local version in defaults. The workflow is:
@@ -81,88 +79,6 @@ A refactor changing outputs isn't automatically wrong — `saltbush::calculate_s
 2. Inspect it — is the change explainable (different default, different sampling order)?
 3. If yes: either match the package by adjusting arguments, or accept the new behaviour and regenerate the fixture, recording why in the commit message.
 4. If no: investigate before merging.
-
----
-
-# Plan: `raster` → `terra` migration (Phase 1)
-
-Medium-term goal: drop the `raster` package as a dependency. Almost all of the codebase already uses `terra::` (`rast`, `mask`, `crop`, `vect`, `extract`, `predict`, `spatSample`, `writeRaster`). One holdout remains.
-
-## Remaining `raster::` usage
-
-- **`funx.R:182`** in `create_masked_raster()` — `raster_data <- stack(file)` returns a `RasterStack`, which is then passed to `terra::mask()` (line 192). This works through implicit class coercion in `terra` but is fragile and silently slow. Replace with `terra::rast(file)`.
-- **`funx.R:199`** in the same function — `terra::writeRaster(..., format = "GTiff", overwrite = TRUE)`. `format` is a `raster::writeRaster` argument; `terra::writeRaster` uses `filetype`. Currently this argument is silently ignored. Replace with `filetype = "GTiff"` (or omit, since `.tif` extension already implies GTiff).
-
-The two analysis scripts (`continuous_metrics_analysis.R`, `spectral_species_analysis.R`) already use `terra::` exclusively.
-
-## Rollout
-
-1. Edit `create_masked_raster()` to use `terra::rast()` and fix the `writeRaster` argument.
-2. Drop any `library(raster)` / `requireNamespace("raster")` calls. Currently there are none in the analysis scripts, but verify.
-3. Remove `raster` from any future `DESCRIPTION` / package-loading bootstrap.
-
-## Interaction with the other plans
-
-- Independent of the saltbush migration — `saltbush` already uses `terra::` internally based on its DESCRIPTION, so swapping to `saltbush::create_multiband_image` effectively migrates that function for free. The local `create_masked_raster` is the only function this plan acts on.
-- Should land before targets refactor: pipeline targets that produce or consume `SpatRaster` objects shouldn't have to handle mixed `RasterStack`/`SpatRaster` types.
-
----
-
-# Plan: reproducibility groundwork (Phase 2)
-
-Four cheap-but-load-bearing items between Phase 1 and Phase 3. Independent of the function refactors; address the things most likely to break a reader's replication six months after publication.
-
-Dependency pinning with `renv` is *deliberately not* in this phase — locking before saltbush/targets means constantly re-snapshotting as packages change. It lives in Phase 5 instead, once the dependency set has stabilised.
-
-1. **Wire the rarefaction seed into the analysis scripts.** Phase 0 added `seed = NULL` to `calculate_cv()` / `calculate_chv_nopca()` / `calculate_spectral_metrics()` / `calculate_coefficient_of_variance()`, but neither analysis script passes a value — so end-user runs of `continuous_metrics_analysis.R` still produce slightly different CV/CHV every time. Pick a documented seed (e.g. `42`), pass it at each call site, mention it in the README.
-2. **Add a LICENSE.** Conventional split: CC-BY-4.0 for `data/` (matches the Zenodo deposit) and MIT or Apache-2.0 for code. A single root-level LICENSE file is fine if the data/code split is documented in the README.
-3. **Add CITATION.cff.** GitHub renders it as a "Cite this repository" button, and reference managers (Zotero, Mendeley) parse it. Cross-link the eventual code DOI when Phase 5 mints it.
-4. **Document R version + system deps** in a SETUP section of the README (even a stub README is fine here; the full rewrite is Phase 5). `sf` and `terra` need GDAL/PROJ; `geometry` needs C++17.
-
-Tier 1 tests pass at the end of this phase. Tier 2 passes too if the rasters are downloaded.
-
----
-
-# Plan: migrate from `funx.R` to the `saltbush` package (Phase 3)
-
-Most of the reusable functions in `funx.R` have been generalized into the `saltbush` R package (`traitecoevo/saltbush` on GitHub). The analysis should call `saltbush::` functions instead of carrying local copies.
-
-## Mapping
-
-`saltbush` currently exports (at least) these four functions, all with the same names as their `funx.R` counterparts:
-
-| funx.R                          | saltbush                          | call sites                                          |
-| ------------------------------- | --------------------------------- | --------------------------------------------------- |
-| `create_multiband_image()`      | `saltbush::create_multiband_image()`      | (none in the two analysis scripts; used in preprocessing) |
-| `extract_pixel_values()`        | `saltbush::extract_pixel_values()`        | `continuous_metrics_analysis.R` line 22             |
-| `calculate_spectral_metrics()`  | `saltbush::calculate_spectral_metrics()`  | `continuous_metrics_analysis.R` line 34             |
-| `calculate_field_diversity()`   | `saltbush::calculate_field_diversity()`   | both scripts                                        |
-
-## What stays in `funx.R`
-
-`saltbush` doesn't expose everything the analysis uses. These stay local as analysis-specific helpers:
-
-- `calculate_coefficient_of_variance()` — band-subset CV for the red-edge/NIR combos (`continuous_metrics_analysis.R` lines 140–148). Decided to keep local rather than upstream; calls the local `calculate_cv` so that helper stays too.
-- `calculate_cv` — local copy retained solely because `calculate_coefficient_of_variance` still calls it. `calculate_sv` and `calculate_chv_nopca` (and the abandoned `calculate_chv`) were deleted once `calculate_spectral_metrics` was swapped to saltbush.
-- `find_optimum_thresholds()` and `create_masked_raster()` — used in the preprocessing step (not in the two analysis scripts shipped here).
-- `download_zenodo_rasters()` — analysis-specific; stays local.
-- `bin_survey_subplots()` — AusPlots-specific transect/point → 5×5 subplot grid; used by the local `calculate_field_diversity` wrapper.
-
-## Rollout
-
-1. **Install + verify.** `remotes::install_github("traitecoevo/saltbush")`. Diff each function signature against the `funx.R` version (`args(saltbush::extract_pixel_values)` vs `args(extract_pixel_values)`). Note any differences in argument names, defaults, or return shapes.
-2. **Swap one call site at a time** and confirm the output is identical. Suggested order, easiest first:
-   1. `calculate_field_diversity` (pure data, no rasters needed — fastest to validate)
-   2. `extract_pixel_values`
-   3. `calculate_spectral_metrics`
-3. **Slim `funx.R`** — delete functions that now have a `saltbush` equivalent in active use. Leave `# moved to saltbush` only if a comment is needed to explain something non-obvious; otherwise just delete.
-4. **Upstreaming decision** — `calculate_coefficient_of_variance` (band-subset CV) is kept local rather than upstreamed. Revisit if a future saltbush release exposes a `bands =` knob on `calculate_cv`.
-
-## Interaction with the other plans
-
-- The targets pipeline (Phase 4) should call `saltbush::` functions directly, not `funx.R` copies of the same logic — so this phase must land before that one.
-- Phase 4a of the targets plan ("extract model loops into functions, drop side effects") is unaffected — those are analysis-specific and won't live in `saltbush`.
-- Swapping function sources is harder once a `_targets.R` is referencing them; do the dedup first.
 
 ---
 
@@ -200,16 +116,14 @@ file targets:
   survey_csv       (format="file")
 
 per-site (tar_map over sites = c("NSABHC0009"..0012)):
-  pixel_values_<site>          <- extract_pixel_values(...)
-  cv_<site>                    <- calculate_cv(...,  rarefaction = TRUE, n = 999)
-  sv_<site>                    <- calculate_sv(...)
-  chv_<site>                   <- calculate_chv_nopca(...)
-  cv_<bands>_<site>            <- calculate_cv(...) for each of 3 band subsets
+  pixel_values_<site>          <- extract_pixel_values(...)                       # saltbush wrapper
+  spectral_metrics_<site>      <- calculate_spectral_metrics(..., rarefaction = TRUE, n = 999, seed = 42)  # saltbush wrapper; returns CV / SV / CHV_nopca
+  cv_<bands>_<site>            <- calculate_coefficient_of_variance(..., bands = <subset>)  # local; one per 3 band subsets
 
 combined:
-  spectral_metrics             <- bind_rows of cv/sv/chv across sites
+  spectral_metrics             <- bind_rows across sites
   cv_band_combos               <- bind_rows of band-subset CVs across sites
-  taxonomic_diversity          <- calculate_field_diversity(survey_csv)
+  taxonomic_diversity          <- calculate_field_diversity(survey_csv)           # saltbush wrapper
   spectral_taxonomic           <- left_join(spectral_metrics, taxonomic_diversity)
 
 models (tar_map over taxonomic × spectral metric):
