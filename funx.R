@@ -457,3 +457,272 @@ calculate_field_diversity <- function(survey_data) {
   )
 }
 
+
+# SITE-PREFIX HELPER ----------------------------------------------------------
+
+# Prepend a single-letter code (E/G/S/C) derived from the AusPlots site name to
+# `subplot_id`, so subplot ids remain unique after binding the four sites
+# (each site has its own 5×5 grid with overlapping "row_col" ids).
+add_site_prefix <- function(data) {
+  data %>%
+    mutate(subplot_id = case_when(
+      site == "NSABHC0009" ~ paste0("E", subplot_id),
+      site == "NSABHC0010" ~ paste0("G", subplot_id),
+      site == "NSABHC0011" ~ paste0("S", subplot_id),
+      site == "NSABHC0012" ~ paste0("C", subplot_id)
+    ))
+}
+
+
+# MIXED-MODEL FITTING ---------------------------------------------------------
+
+# Fit one mixed model: <tax_metric> ~ scale(<spec_metric>) + (1 | site).
+# Returns a one-row tibble of coefficients, Wald CIs, p-value, significance flag,
+# Nakagawa R^2, convergence flag, and singular-fit flag. Returns NULL if
+# glmmTMB fails to fit. Replaces the nested-loop body in
+# continuous_metrics_analysis.R.
+fit_spectral_biodiversity_model <- function(data, tax_metric, spec_metric) {
+  model_formula <- as.formula(
+    paste(tax_metric, "~ scale(", spec_metric, ") + (1 | site)")
+  )
+  model <- try(glmmTMB::glmmTMB(model_formula, data = data), silent = TRUE)
+  if (inherits(model, "try-error")) return(NULL)
+
+  converged   <- tryCatch(model$sdr$pdHess, error = function(e) FALSE)
+  is_singular <- performance::check_singularity(model)
+  r2_values   <- performance::r2_nakagawa(model)
+
+  coefs <- summary(model)$coefficients$cond
+  spec_term <- paste0("scale(", spec_metric, ")")
+  conf_int  <- confint(model, method = "Wald")
+
+  p_value <- coefs[spec_term, "Pr(>|z|)"]
+
+  tibble(
+    taxonomic_metric = tax_metric,
+    spectral_metric  = spec_metric,
+    r2_marginal      = unname(r2_values$R2_marginal),
+    r2_conditional   = unname(r2_values$R2_conditional),
+    beta             = coefs[spec_term, "Estimate"],
+    beta_ci_lower    = conf_int[spec_term, 1],
+    beta_ci_upper    = conf_int[spec_term, 2],
+    intercept        = coefs["(Intercept)", "Estimate"],
+    p_value          = p_value,
+    significance     = if_else(p_value < 0.05, "yes", "no"),
+    converged        = converged,
+    is_singular      = is_singular
+  )
+}
+
+# Fit one CV-vs-taxonomic model on the band-combination subset of cv_values:
+# <tax_metric> ~ scale(CV) + (1 | site), restricted to rows where bands == band_combo.
+# Returns a one-row tibble; NULL on fit failure.
+fit_cv_band_model <- function(data, tax_metric, band_combo) {
+  df_filtered <- data %>% filter(bands == band_combo)
+  model_formula <- as.formula(paste0(tax_metric, " ~ scale(CV) + (1 | site)"))
+  model <- try(glmmTMB::glmmTMB(model_formula, data = df_filtered), silent = TRUE)
+  if (inherits(model, "try-error")) return(NULL)
+
+  r2_values <- performance::r2_nakagawa(model)
+  coefs     <- summary(model)$coefficients$cond
+  conf_int  <- confint(model, method = "Wald")
+  spec_term <- "scale(CV)"
+  p_spec    <- coefs[spec_term, "Pr(>|z|)"]
+
+  tibble(
+    bands              = band_combo,
+    taxonomic_metric   = tax_metric,
+    spectral_metric    = "CV",
+    r2_marginal        = unname(r2_values$R2_marginal),
+    r2_conditional     = unname(r2_values$R2_conditional),
+    beta_spec          = coefs[spec_term, "Estimate"],
+    beta_spec_ci_lower = conf_int[spec_term, 1],
+    beta_spec_ci_upper = conf_int[spec_term, 2],
+    p_spec             = p_spec,
+    sig_spec           = if_else(p_spec < 0.05, "yes", "no"),
+    intercept          = coefs["(Intercept)", "Estimate"]
+  )
+}
+
+
+# PUBLICATION FIGURES ---------------------------------------------------------
+
+# Figure 5 — per spec × tax scatter (4×3 facet) with model-prediction lines drawn
+# only where `model_results$significance == "yes"`. Predictions come from `fits`
+# (cached fits from data_out/model_fits/, named "<tax>_<spec>"), so this
+# function does no model fitting itself. Requires ggnewscale + ggh4x loaded.
+make_figure_5 <- function(metrics, model_results, fits) {
+  taxonomic_labels <- c(
+    species_richness = "Species\nRichness",
+    exp_shannon      = "Exponential\nShannon's",
+    inv_simpson      = "Inverse\nSimpson's",
+    pielou_evenness  = "Pielou's\nEvenness"
+  )
+  spectral_labels <- c(
+    CV      = "CV",
+    SV      = "SV",
+    log.CHV = "log(CHV)"
+  )
+
+  df_long <- metrics %>%
+    pivot_longer(
+      cols      = c(species_richness, exp_shannon, inv_simpson, pielou_evenness),
+      names_to  = "taxonomic_metric",
+      values_to = "taxonomic_value"
+    ) %>%
+    pivot_longer(
+      cols      = c(CV, SV, log.CHV),
+      names_to  = "spectral_metric",
+      values_to = "spectral_value"
+    ) %>%
+    mutate(
+      taxonomic_metric = factor(taxonomic_metric, levels = names(taxonomic_labels)),
+      predicted_values = NA_real_
+    )
+
+  for (tax in levels(df_long$taxonomic_metric)) {
+    for (spec in unique(df_long$spectral_metric)) {
+      fit <- fits[[paste0(tax, "_", spec)]]
+      if (is.null(fit)) next
+      preds <- predict(fit, newdata = metrics, type = "response")
+      rows  <- df_long$taxonomic_metric == tax & df_long$spectral_metric == spec
+      df_long$predicted_values[rows] <- preds
+    }
+  }
+
+  df_long <- df_long %>%
+    left_join(
+      model_results %>% dplyr::select(taxonomic_metric, spectral_metric, significance),
+      by = c("taxonomic_metric", "spectral_metric")
+    )
+
+  df_long %>%
+    ggplot(aes(x = spectral_value, y = taxonomic_value, color = site)) +
+    geom_point(alpha = 0.7) +
+    facet_grid(
+      taxonomic_metric ~ spectral_metric,
+      scales   = "free",
+      labeller = labeller(taxonomic_metric = taxonomic_labels,
+                          spectral_metric  = spectral_labels),
+      switch   = "both"
+    ) +
+    labs(title = "", color = "Site") +
+    theme_minimal() +
+    scale_color_manual(values = c("darkgreen", "saddlebrown", "navajowhite2", "darkseagreen")) +
+    ggnewscale::new_scale_colour() +
+    geom_line(
+      data = df_long %>% filter(significance == "yes"),
+      aes(x = spectral_value, y = predicted_values, color = site),
+      linetype = "solid", linewidth = 1, show.legend = FALSE
+    ) +
+    scale_color_manual(values = rep("black", 4)) +
+    ggh4x::facetted_pos_scales(
+      y = list(
+        taxonomic_metric == "species_richness" ~ scale_y_continuous(breaks = c(5, 10, 15),   limits = c(0, 20)),
+        taxonomic_metric == "exp_shannon"      ~ scale_y_continuous(breaks = c(5, 10, 15),   limits = c(0.7, 16)),
+        taxonomic_metric == "inv_simpson"      ~ scale_y_continuous(breaks = c(4, 8, 12),    limits = c(0, 12.5)),
+        taxonomic_metric == "pielou_evenness"  ~ scale_y_continuous(breaks = c(0.8, 0.9, 1), limits = c(0.65, 1))
+      )
+    ) +
+    ggh4x::facetted_pos_scales(
+      x = list(
+        spectral_metric == "CV"      ~ scale_x_continuous(breaks = c(0.15, 0.25, 0.35),      limits = c(0.1, 0.4)),
+        spectral_metric == "log.CHV" ~ scale_x_continuous(breaks = c(-20.0, -18.0, -16.0),   limits = c(-20, -15.5)),
+        spectral_metric == "SV"      ~ scale_x_continuous(breaks = c(0.0005, 0.0015, 0.0025), limits = c(0, 0.0027))
+      )
+    ) +
+    theme(
+      plot.title          = element_text(hjust = 0.5, face = "bold", size = 14),
+      axis.text.x         = element_text(angle = 90, hjust = 1, size = 12),
+      axis.title.x        = element_text(size = 16),
+      panel.grid.major    = element_blank(),
+      panel.grid.minor    = element_blank(),
+      axis.text.y         = element_text(size = 14),
+      strip.text.x        = element_text(size = 14),
+      strip.text.y        = element_text(size = 14),
+      axis.title.x.bottom = element_blank(),
+      axis.title.y        = element_blank(),
+      strip.placement     = "outside",
+      legend.position     = "bottom",
+      legend.text         = element_text(size = 13),
+      legend.title        = element_text(size = 13),
+      plot.background     = element_rect(fill = "white", color = "white")
+    )
+}
+
+# Figure 6 — CV beta coefficients (Wald CIs) across band-combination models,
+# plus the all-bands CV row pulled from `model_results`. pielou_evenness is
+# dropped per the manuscript's figure design.
+make_figure_6 <- function(model_results, cv_band_results) {
+  all_bands_cv <- model_results %>%
+    filter(spectral_metric == "CV") %>%
+    transmute(
+      bands              = "all_bands",
+      taxonomic_metric,
+      beta_spec          = beta,
+      beta_spec_ci_lower = beta_ci_lower,
+      beta_spec_ci_upper = beta_ci_upper,
+      sig_spec           = significance
+    )
+
+  all_cv_results <- bind_rows(all_bands_cv, cv_band_results) %>%
+    filter(taxonomic_metric != "pielou_evenness") %>%
+    mutate(
+      bands = factor(bands, levels = c(
+        "red.edge_nir",
+        "green_red.edge_nir",
+        "green_red_red.edge_nir",
+        "all_bands"
+      )),
+      taxonomic_metric = factor(taxonomic_metric, levels = c(
+        "species_richness", "exp_shannon", "inv_simpson"
+      ))
+    )
+
+  band_labels <- c(
+    red.edge_nir           = "Red edge and NIR",
+    green_red.edge_nir     = "Green, red edge, NIR",
+    green_red_red.edge_nir = "Vegetation bands",
+    all_bands              = "All Bands"
+  )
+  band_colours <- c(
+    all_bands              = "black",
+    green_red_red.edge_nir = "#B31441",
+    green_red.edge_nir     = "#D95F02",
+    red.edge_nir           = "#E6AB02"
+  )
+  taxonomic_labels_fig6 <- c(
+    species_richness = "Species Richness",
+    exp_shannon      = "Exponential Shannon",
+    inv_simpson      = "Inverse Simpson"
+  )
+
+  all_cv_results %>%
+    ggplot(aes(x = beta_spec, y = bands, color = bands)) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
+    geom_errorbarh(
+      aes(xmin = beta_spec_ci_lower, xmax = beta_spec_ci_upper),
+      height = 0.1, linewidth = 0.8
+    ) +
+    geom_point(size = 3.5, stroke = 1) +
+    scale_color_manual(values = band_colours) +
+    scale_y_discrete(labels = band_labels) +
+    facet_wrap(
+      ~ taxonomic_metric, nrow = 1,
+      labeller = labeller(taxonomic_metric = taxonomic_labels_fig6)
+    ) +
+    labs(x = "Beta co-efficient", y = NULL) +
+    guides(color = "none") +
+    theme_minimal() +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.spacing    = unit(2, "lines"),
+      text             = element_text(size = 20),
+      strip.text       = element_text(size = 18, face = "bold"),
+      axis.text.y      = element_text(size = 16),
+      axis.text.x      = element_text(size = 14),
+      axis.title.x     = element_text(size = 18),
+      axis.title.y     = element_blank(),
+      plot.background  = element_rect(fill = "white", color = "white")
+    )
+}
