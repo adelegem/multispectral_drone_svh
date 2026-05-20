@@ -14,5 +14,8 @@ data_out/
 # macOS
 .DS_Store
 
-# Transient download logs
-data/raster_images_download.log
+# Transient logs (download progress, run output, render output)
+*.log
+
+# Manuscript drafts — kept outside source control
+*.docx
