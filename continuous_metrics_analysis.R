@@ -29,7 +29,7 @@ pixel_values <- extract_pixel_values(raster_files, subplot_files, c('blue', 'gre
 # calculate min pixels per subplot for rarefraction
 pixel_per_plot <- pixel_values %>%
   na.omit() %>%
-  group_by(identifier, subplot_id) %>%
+  group_by(site, subplot_id) %>%
   summarise(count = n())
 
 min(pixel_per_plot$count)
