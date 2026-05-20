@@ -532,155 +532,69 @@ calculate_coefficient_of_variance <- function(pixel_values_df,
 
 # CALCULATE_FIELD_DIVERSITY -----------------------------------------------
 
-calculate_field_diversity <- function(survey_data){
-  # get unique site names
-  ausplot_sites <- unique(survey_data$site_location_name)
-  ausplot_sites <- ausplot_sites[ausplot_sites != ""]
-
-  # list to store results for all lists
-  all_site_results <- list()
-
-  # list to store community matrices - useful to check that community matrices are correct :)
-  community_matrices <- list()
-
-  # list to store presence absense matrices
-  presence_absence_matrices <- list()
-
-  subplot_point_counts <- list()
-
-  # Loop through each unique site
-  for (site in ausplot_sites) {
-    # Filter data for the current site
-    site_survey_data <- survey_data %>%
-      filter(site_location_name == site)
-
-    # Extract only direction of the transect (no numbers)
-    site_survey_data$transect_direction <- gsub('[[:digit:]]+', '', site_survey_data$transect)
-
-    # Extract only number of the transect (no direction)
-    site_survey_data$transect_number <- as.numeric(gsub(".*?([0-9]+).*", "\\1", site_survey_data$transect))
-
-    # Create variable for fixed transect direction (to order them all transects in the same direction)
-    site_survey_data$transect_direction2 <- NA
-
-    # Create variable for fixed point number (inverse in some cases as if they had been collected in the same direction)
-    site_survey_data$point_number2 <- NA
-
-    # Create XY empty variables for plot XY coordinates
-    site_survey_data$X_plot <- NA
-    site_survey_data$Y_plot <- NA
-
-    site_survey_data <- site_survey_data %>%
-      mutate(
-        point_number2 = case_when(
-          transect_direction == "E-W" ~ 100 - point_number,
-          transect_direction == "N-S" ~ 100 - point_number,
-          TRUE ~ point_number
-        ),
-        transect_direction2 = case_when(
-          transect_direction %in% c("W-E", "E-W") ~ "W-E",
-          transect_direction %in% c("N-S", "S-N") ~ "S-N"
-        )
+# Reconstruct subplot_id (5x5 grid) from AusPlots transect/point columns.
+# Returns survey_data with added subplot_id (+ helper columns), filtered to drop
+# point_number2 == 100 which would otherwise straddle subplot boundaries.
+bin_survey_subplots <- function(survey_data) {
+  survey_data %>%
+    mutate(
+      transect_direction = gsub('[[:digit:]]+', '', transect),
+      transect_number = as.numeric(gsub(".*?([0-9]+).*", "\\1", transect)),
+      point_number2 = case_when(
+        transect_direction == "E-W" ~ 100 - point_number,
+        transect_direction == "N-S" ~ 100 - point_number,
+        TRUE ~ point_number
+      ),
+      transect_direction2 = case_when(
+        transect_direction %in% c("W-E", "E-W") ~ "W-E",
+        transect_direction %in% c("N-S", "S-N") ~ "S-N"
+      ),
+      X_plot = case_when(
+        transect_direction2 == "W-E" ~ point_number2,
+        transect_direction2 == "S-N" & transect_number == 1 ~ 10,
+        transect_direction2 == "S-N" & transect_number == 2 ~ 30,
+        transect_direction2 == "S-N" & transect_number == 3 ~ 50,
+        transect_direction2 == "S-N" & transect_number == 4 ~ 70,
+        transect_direction2 == "S-N" & transect_number == 5 ~ 90
+      ),
+      Y_plot = case_when(
+        transect_direction2 == "S-N" ~ point_number2,
+        transect_direction2 == "W-E" & transect_number == 1 ~ 10,
+        transect_direction2 == "W-E" & transect_number == 2 ~ 30,
+        transect_direction2 == "W-E" & transect_number == 3 ~ 50,
+        transect_direction2 == "W-E" & transect_number == 4 ~ 70,
+        transect_direction2 == "W-E" & transect_number == 5 ~ 90
       )
+    ) %>%
+    filter(point_number2 != 100) %>%
+    mutate(
+      subplot_row = pmin(ceiling((Y_plot + 1) / 20), 5),
+      subplot_col = pmin(ceiling((X_plot + 1) / 20), 5),
+      subplot_id  = paste(subplot_row, subplot_col, sep = "_")
+    )
+}
 
-    # Assign plotXY coordinates based on 'transect_direction2' and 'transect_number'
-    site_survey_data <- site_survey_data %>%
-      mutate(
-        X_plot = case_when(
-          transect_direction2 == "W-E" ~ point_number2,
-          transect_direction2 == "S-N" & transect_number == 1 ~ 10,
-          transect_direction2 == "S-N" & transect_number == 2 ~ 30,
-          transect_direction2 == "S-N" & transect_number == 3 ~ 50,
-          transect_direction2 == "S-N" & transect_number == 4 ~ 70,
-          transect_direction2 == "S-N" & transect_number == 5 ~ 90
-        ),
-        Y_plot = case_when(
-          transect_direction2 == "S-N" ~ point_number2,
-          transect_direction2 == "W-E" & transect_number == 1 ~ 10,
-          transect_direction2 == "W-E" & transect_number == 2 ~ 30,
-          transect_direction2 == "W-E" & transect_number == 3 ~ 50,
-          transect_direction2 == "W-E" & transect_number == 4 ~ 70,
-          transect_direction2 == "W-E" & transect_number == 5 ~ 90
-        )
-      )
+# Wraps saltbush::calculate_field_diversity to compute per-subplot diversity.
+# Subplot binning (transect/point -> 5x5 grid) is AusPlots-specific and stays
+# local; the per-group diversity math is delegated to saltbush.
+calculate_field_diversity <- function(survey_data) {
+  binned <- bin_survey_subplots(survey_data)
 
-    #remove points 100, as this causes cause subplots to have >40 points
-    site_survey_data <- site_survey_data %>%
-      filter(point_number2 != 100)
+  out <- saltbush::calculate_field_diversity(
+    binned,
+    group_by_cols = c("site_location_name", "subplot_id")
+  )
 
+  final_results <- out$taxonomic_diversity %>%
+    rename(site = site_location_name) %>%
+    select(subplot_id, species_richness, shannon_diversity,
+           simpson_diversity, pielou_evenness, exp_shannon,
+           inv_simpson, site) %>%
+    arrange(site, subplot_id)
 
-    # subplot rows and columns - +1 ensures 0 point values fall into correct subplot,
-    # pmin ensures 100 point values falls in correct subplot given +1
-    site_survey_data$subplot_row <- pmin(ceiling((site_survey_data$Y_plot + 1) / 20), 5)
-    site_survey_data$subplot_col <- pmin(ceiling((site_survey_data$X_plot + 1) / 20), 5)
-
-    # single ID for subplot row and column
-    site_survey_data$subplot_id <- paste(site_survey_data$subplot_row, site_survey_data$subplot_col, sep = "_")
-
-    # Count unique hits in each subplot after filtering
-    point_counts <- site_survey_data %>%
-      group_by(subplot_id) %>%
-      summarise(points_per_subplot = n_distinct(hits_unique))
-
-    # Store point counts for the current site
-    subplot_point_counts[[site]] <- point_counts
-
-    subplot_diversity <- site_survey_data %>%
-      drop_na(standardised_name) %>%
-      filter(!standardised_name %in% c('Dead grass', 'Dead shrub')) %>%
-      group_by(subplot_id) %>%
-      summarise(species_richness = n_distinct(standardised_name))
-
-    community_matrix <- site_survey_data %>%
-      drop_na(standardised_name) %>%
-      filter(!standardised_name %in% c('Dead grass', 'Dead shrub')) %>%
-      count(subplot_id, standardised_name) %>%
-      spread(standardised_name, n, fill = 0)
-
-
-    # remove unwanted column if it exists -- WHY DOES THIS COLUMN EXIST~!!!!>???>
- #   if ("V1" %in% colnames(community_matrix)) {
-  #    community_matrix <- community_matrix %>%
-   #     dplyr::select(-V1)
-  #  }
-
-    # store the community matrix  in the list
-    community_matrices[[site]] <- community_matrix
-
-
-    # calculate presence-absence values
-    presence_absence_matrix <- site_survey_data %>%
-      group_by(subplot_id) %>%
-      summarise(presence_proportion = sum(!is.na(standardised_name)) / n())
-
-    # store the presence-absence matrix
-    presence_absence_matrices[[site]] <- presence_absence_matrix
-
-    # calculate diversity indices
-    shannon_diversity <- diversity(community_matrix[, -1], index = "shannon")
-    simpson_diversity <- diversity(community_matrix[, -1], index = "simpson")
-    inv_simpson <- diversity(community_matrix[ , -1], index = 'invsimpson')
-
-    subplot_diversity <- subplot_diversity %>%
-      mutate(shannon_diversity = shannon_diversity,
-             simpson_diversity = simpson_diversity,
-             pielou_evenness = shannon_diversity / log(species_richness),
-             exp_shannon = exp(shannon_diversity),
-             inv_simpson = inv_simpson,
-             site = site)
-
-    # store  result for  current site
-    all_site_results[[site]] <- subplot_diversity
-  }
-
-  # combine into one df
-  final_results <- bind_rows(all_site_results, .id = "site")
-
-  return(list(
+  list(
     final_results = final_results,
-    community_matrices = community_matrices,
-    presence_absence_matrices = presence_absence_matrices,
-    subplot_point_counts = subplot_point_counts
-  ))
+    community_matrices = out$community_matrices
+  )
 }
 
