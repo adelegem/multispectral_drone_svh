@@ -4,12 +4,16 @@ data/raster_images/
 # Intermediate/derived outputs
 data_out/
 
+# Publication figure outputs from figures-for-publication.R
+maps_graphs/
+
 # R / RStudio
 .Rhistory
 .Rapp.history
 .RData
 .Ruserdata
 .Rproj.user/
+Rplots.pdf
 
 # macOS
 .DS_Store
