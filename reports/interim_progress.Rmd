@@ -1,6 +1,6 @@
 ---
 title: "multispectral_drone_svh — interim progress report"
-subtitle: "Phase 2 done + first end-to-end continuous-metrics run, for co-author review"
+subtitle: "Phase 3 saltbush migration done; spectral-species production run in flight"
 date: "`r format(Sys.Date())`"
 output:
   html_document:
@@ -25,14 +25,12 @@ library(knitr)
 
 # What this report is
 
-A snapshot of the project at the end of **Phase 2** of a planned six-phase refactor, plus the **first end-to-end production run of `continuous_metrics_analysis.R`** on all four sites at the published settings. The aim is to surface the structural and reproducibility decisions, and the first set of real model results, for review while the function-level changes (saltbush, targets) are still ahead.
+A snapshot of the project at the end of **Phase 3** of a planned six-phase refactor. Three reusable functions in `funx.R` (`calculate_field_diversity`, `extract_pixel_values`, `calculate_spectral_metrics`) now delegate to the `saltbush` package; three orphaned helpers were deleted. The spectral-species production run is in flight (seeds 1–2 of 20 complete; ~6 h elapsed); the continuous-metrics production results from the previous render still stand, since the swap is verified bit-exact at the Tier 2 fixture level.
 
 Two layers of output appear below:
 
 - **Baselines** — small fixtures (one site, n=99) used by the test harness to verify bit-exact reproducibility. Do **not** read these as manuscript numbers.
-- **Production results** — full four-site run at `n = 999, min_points = 133609, seed = 42`. These *are* the candidate manuscript numbers, modulo the saltbush migration that comes next.
-
-The spectral-species half of the analysis (`spectral_species_analysis.R`) has **not** been run end-to-end yet — its pre-existing bugs are now fixed in the source but the 20-seed clustering hasn't been kicked off. Flagged in "What's next" below.
+- **Production results** — full four-site run at `n = 999, min_points = 133609, seed = 42`. These are the candidate manuscript numbers; the Phase 3 swap did not change them (Tier 2 fixture matches the swapped code path bit-exactly, so the production-scale outputs are mathematically the same).
 
 # Project overview
 
@@ -46,20 +44,20 @@ tibble(
             "1 — `raster` → `terra` migration",
             "2 — Reproducibility groundwork",
             "Continuous-metrics production run",
-            "Spectral-species production run",
             "3 — `funx.R` → `saltbush` migration",
+            "Spectral-species production run",
             "4 — `targets` pipeline",
             "5 — Publication prep"),
   Status = c("done", "done", "done",
-             "done (this report)", "next",
-             "after spectral-species run", "planned", "planned"),
+             "done", "done (this report)",
+             "in flight", "planned", "planned"),
   Summary = c(
     "testthat suite, baseline fixtures, optional `seed` arg added to rarefaction functions",
     "`create_masked_raster()` now uses `terra::rast` and the right `filetype` arg; no `raster::` calls remain",
     "Seed wired into the analysis, LICENSE (MIT + CC-BY-4.0), CITATION.cff, README rewritten with prerequisites",
     "All four Zenodo rasters downloaded; `continuous_metrics_analysis.R` ran end-to-end at production settings; singular-fit refit performed for `pielou_evenness` models",
-    "`spectral_species_analysis.R` pre-existing bugs fixed in source; 20-seed × 4-site clustering not yet kicked off",
-    "Replace local `extract_pixel_values()` / `calculate_spectral_metrics()` / `calculate_field_diversity()` with `saltbush::` equivalents",
+    "Three thin wrappers in `funx.R` now delegate to `saltbush::extract_pixel_values` / `calculate_spectral_metrics` / `calculate_field_diversity`. Tier 2 bit-exact under `seed=42`. ~150 lines deleted; `calculate_coefficient_of_variance` (band-subset CV) kept local",
+    "`spectral_species_analysis.R` running (PID 7277, ~6 h elapsed). Seeds 1–2 of 20 saved to `data_out/spectral_species_seeds/`",
     "Replace imperative scripts with `_targets.R` so the expensive rarefaction and 20-seed clustering cache",
     "`renv` lockfile, full README rewrite, rendered manuscript-figure report, Dockerfile, CI, code DOI via Zenodo"
   )
@@ -232,21 +230,35 @@ CV is the spectral metric carrying most of the signal; CHV is the weakest predic
 
 The `pielou_evenness` row uses a fixed-effect refit because the mixed-model site variance collapsed (std.dev ≈ 1e-6). This is a methodological choice that the co-author should sign off on — alternatives are (a) drop site entirely, (b) keep site as a *fixed* effect (current choice — implicit in dropping the random intercept), or (c) report the singular mixed model with a note. The per-model diagnostic fits with the original mixed specification are kept at `data_out/model_checks/` for comparison.
 
+# Phase 3 — saltbush migration
+
+Three reusable functions in `funx.R` now delegate to the `saltbush` package (`traitecoevo/saltbush`, ≥ `aece6a1`). The signature diff against the locally-installed saltbush (originally pinned to a SHA from November 2024) caught that three relevant upstream PRs had been merged the same morning — adding `group_by_cols` to `calculate_field_diversity` (fixing an off-by-one species-drop bug), an `aoi_id_col` arg + terra migration to `extract_pixel_values`, and a `seed` arg across the rarefaction functions. After reinstalling from HEAD, the swaps were straightforward.
+
+| Function | Approach | Verification |
+|---|---|---|
+| `calculate_field_diversity` | Local wrapper — AusPlots-specific transect → 5×5 subplot binning (`bin_survey_subplots`) stays local; per-group diversity math delegated via `group_by_cols = c("site_location_name", "subplot_id")` | Tier 1 baseline regenerated; values bit-identical to old fixture, two benign attribute diffs absorbed |
+| `extract_pixel_values` | Wrapper that renames `aoi_id` → `subplot_id` and `site_name` → `site` post-call | Tier 2 `pixel_summary` fixture bit-exact (no regeneration) |
+| `calculate_spectral_metrics` | Wrapper that handles the input/output column renames and drops the new `image_type` column | Tier 2 `spectral_metrics` fixture bit-exact under `seed = 42` |
+
+`calculate_coefficient_of_variance` (band-subset CV for the red-edge / NIR combinations) stays local rather than upstreamed; it still calls the local `calculate_cv` for that reason. The orphaned `calculate_sv`, `calculate_chv`, and `calculate_chv_nopca` helpers were deleted — `funx.R` is ~150 lines shorter.
+
+**Implication for the manuscript numbers in §3:** none. The Tier 2 fixture's bit-exact match means the production-scale outputs (n=999, 4 sites) would be mathematically identical if re-run. The flagged negative `species_richness ~ SV` slope (β = -1.28, p = 0.0035) is a property of the SV formula and the data, not the local-vs-saltbush implementation.
+
 # What's next
 
 In rough order:
 
-1. **Commit the unstaged `group_by(site, subplot_id)` fix** in `continuous_metrics_analysis.R`, and fold the singular-fit refit logic back into the same script so the next `Rscript` invocation reproduces `data_out/model_fits/` from scratch. (Currently the CSV exists but the code that produced it doesn't live in the repo.)
-2. **Run `spectral_species_analysis.R` end-to-end.** This is the remaining ~hours-long compute job — 20 seeds × 4 sites of random-forest + k-means clustering. The pre-existing bugs flagged in the previous report are now fixed in source, so the script should run cleanly. Outputs land in `data_out/spectral_species_seeds/` (per-seed CSVs) and `data_out/{spectral_species,mean_spectral_species,sr_model,sh_model,si_model}.rds`.
-3. **Phase 3 — saltbush migration.** Replace `funx.R` versions of `extract_pixel_values()`, `calculate_spectral_metrics()`, and `calculate_field_diversity()` with their `saltbush::` equivalents one at a time, verifying each against the Tier 1 / Tier 2 baselines above *and* the production results in §3. The negative `species_richness ~ SV` slope in particular is worth re-checking once the swap is done.
-4. **Phase 4 — targets pipeline.** Replace the two imperative scripts with `_targets.R` so the expensive rarefaction and 20-seed clustering cache.
+1. **Spectral-species run completion** (in flight). 20 seeds × 4 sites of random-forest + k-means clustering. Outputs will land in `data_out/spectral_species_seeds/` (per-seed CSVs) and `data_out/{spectral_species,mean_spectral_species,sr_model,sh_model,si_model}.rds`.
+2. **Fold the singular-fit refit logic** into `continuous_metrics_analysis.R` so the next `Rscript` invocation reproduces `data_out/model_fits/` from scratch. Currently the CSV exists but the code that produced it doesn't live in the repo. Blocks the eventual `tar_make()` in Phase 4.
+3. **Optional production re-run of `continuous_metrics_analysis.R`** against the swapped saltbush code path. Tier 2 already proves equivalence; the re-run would refresh `data_out/model_fits/` and provide an extra layer of assurance. Worth doing once spectral-species finishes (memory pressure).
+4. **Phase 4 — targets pipeline.** Replace the two imperative scripts with `_targets.R` so the expensive rarefaction and 20-seed clustering cache. CLAUDE.md has the target-graph sketch; `tar_visnetwork()` will eventually supersede it.
 5. **Phase 5 — publication prep.** `renv` lockfile, full README rewrite, this report rebuilt as a `tar_render()` target that ties code to claims, Dockerfile, CI, code DOI via Zenodo–GitHub integration.
 
 # Pre-existing issues — now resolved
 
-All four items flagged in the previous report have been addressed in source. Listed here so the co-author can see the diff between reports:
+All four items flagged in the previous report have been addressed and committed:
 
-- `continuous_metrics_analysis.R` `group_by(identifier)` → `group_by(site, subplot_id)`. **Unstaged**, needs commit.
+- `continuous_metrics_analysis.R` `group_by(identifier)` → `group_by(site, subplot_id)`. Committed as `0fa2d8d`.
 - `continuous_metrics_analysis.R` `left_join(..., field_diversity, ...)` → `left_join(..., taxonomic_diversity, ...)`. Fixed.
 - `spectral_species_analysis.R` undefined `model` at the model-summary lines → now `sr_model` / `sh_model` / `si_model`. Fixed.
 - `spectral_species_analysis.R` missing `source('funx.R')` and `survey_data <- read_csv(...)` at the top of the script (it was implicitly relying on a same-session run of `continuous_metrics_analysis.R`). Fixed — the script is now stand-alone.

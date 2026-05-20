@@ -2839,8 +2839,8 @@ border-radius: 0px;
 
 <h1 class="title toc-ignore">multispectral_drone_svh — interim progress
 report</h1>
-<h3 class="subtitle">Phase 2 done + first end-to-end continuous-metrics
-run, for co-author review</h3>
+<h3 class="subtitle">Phase 3 saltbush migration done; spectral-species
+production run in flight</h3>
 <h4 class="date">2026-05-20</h4>
 
 </div>
@@ -2849,28 +2849,27 @@ run, for co-author review</h3>
 <div id="what-this-report-is" class="section level1" number="1">
 <h1><span class="header-section-number">1</span> What this report
 is</h1>
-<p>A snapshot of the project at the end of <strong>Phase 2</strong> of a
-planned six-phase refactor, plus the <strong>first end-to-end production
-run of <code>continuous_metrics_analysis.R</code></strong> on all four
-sites at the published settings. The aim is to surface the structural
-and reproducibility decisions, and the first set of real model results,
-for review while the function-level changes (saltbush, targets) are
-still ahead.</p>
+<p>A snapshot of the project at the end of <strong>Phase 3</strong> of a
+planned six-phase refactor. Three reusable functions in
+<code>funx.R</code> (<code>calculate_field_diversity</code>,
+<code>extract_pixel_values</code>,
+<code>calculate_spectral_metrics</code>) now delegate to the
+<code>saltbush</code> package; three orphaned helpers were deleted. The
+spectral-species production run is in flight (seeds 1–2 of 20 complete;
+~6 h elapsed); the continuous-metrics production results from the
+previous render still stand, since the swap is verified bit-exact at the
+Tier 2 fixture level.</p>
 <p>Two layers of output appear below:</p>
 <ul>
 <li><strong>Baselines</strong> — small fixtures (one site, n=99) used by
 the test harness to verify bit-exact reproducibility. Do
 <strong>not</strong> read these as manuscript numbers.</li>
 <li><strong>Production results</strong> — full four-site run at
-<code>n = 999, min_points = 133609, seed = 42</code>. These <em>are</em>
-the candidate manuscript numbers, modulo the saltbush migration that
-comes next.</li>
+<code>n = 999, min_points = 133609, seed = 42</code>. These are the
+candidate manuscript numbers; the Phase 3 swap did not change them (Tier
+2 fixture matches the swapped code path bit-exactly, so the
+production-scale outputs are mathematically the same).</li>
 </ul>
-<p>The spectral-species half of the analysis
-(<code>spectral_species_analysis.R</code>) has <strong>not</strong> been
-run end-to-end yet — its pre-existing bugs are now fixed in the source
-but the 20-seed clustering hasn’t been kicked off. Flagged in “What’s
-next” below.</p>
 </div>
 <div id="project-overview" class="section level1" number="2">
 <h1><span class="header-section-number">2</span> Project overview</h1>
@@ -2883,9 +2882,9 @@ predicts taxonomic plant diversity across four AusPlot sites in arid NSW
 (NSABHC0009–0012), each surveyed as a 5×5 grid of 20 m subplots.</p>
 <table>
 <colgroup>
-<col width="15%" />
 <col width="11%" />
-<col width="72%" />
+<col width="6%" />
+<col width="82%" />
 </colgroup>
 <thead>
 <tr class="header">
@@ -2917,27 +2916,30 @@ CC-BY-4.0), CITATION.cff, README rewritten with prerequisites</td>
 </tr>
 <tr class="even">
 <td align="left">Continuous-metrics production run</td>
-<td align="left">done (this report)</td>
+<td align="left">done</td>
 <td align="left">All four Zenodo rasters downloaded;
 <code>continuous_metrics_analysis.R</code> ran end-to-end at production
 settings; singular-fit refit performed for <code>pielou_evenness</code>
 models</td>
 </tr>
 <tr class="odd">
-<td align="left">Spectral-species production run</td>
-<td align="left">next</td>
-<td align="left"><code>spectral_species_analysis.R</code> pre-existing
-bugs fixed in source; 20-seed × 4-site clustering not yet kicked
-off</td>
-</tr>
-<tr class="even">
 <td align="left">3 — <code>funx.R</code> → <code>saltbush</code>
 migration</td>
-<td align="left">after spectral-species run</td>
-<td align="left">Replace local <code>extract_pixel_values()</code> /
-<code>calculate_spectral_metrics()</code> /
-<code>calculate_field_diversity()</code> with <code>saltbush::</code>
-equivalents</td>
+<td align="left">done (this report)</td>
+<td align="left">Three thin wrappers in <code>funx.R</code> now delegate
+to <code>saltbush::extract_pixel_values</code> /
+<code>calculate_spectral_metrics</code> /
+<code>calculate_field_diversity</code>. Tier 2 bit-exact under
+<code>seed=42</code>. ~150 lines deleted;
+<code>calculate_coefficient_of_variance</code> (band-subset CV) kept
+local</td>
+</tr>
+<tr class="even">
+<td align="left">Spectral-species production run</td>
+<td align="left">in flight</td>
+<td align="left"><code>spectral_species_analysis.R</code> running (PID
+7277, ~6 h elapsed). Seeds 1–2 of 20 saved to
+<code>data_out/spectral_species_seeds/</code></td>
 </tr>
 <tr class="odd">
 <td align="left">4 — <code>targets</code> pipeline</td>
@@ -3770,51 +3772,111 @@ intercept), or (c) report the singular mixed model with a note. The
 per-model diagnostic fits with the original mixed specification are kept
 at <code>data_out/model_checks/</code> for comparison.</p>
 </div>
-<div id="whats-next" class="section level1" number="7">
-<h1><span class="header-section-number">7</span> What’s next</h1>
+<div id="phase-3-saltbush-migration" class="section level1" number="7">
+<h1><span class="header-section-number">7</span> Phase 3 — saltbush
+migration</h1>
+<p>Three reusable functions in <code>funx.R</code> now delegate to the
+<code>saltbush</code> package (<code>traitecoevo/saltbush</code>, ≥
+<code>aece6a1</code>). The signature diff against the locally-installed
+saltbush (originally pinned to a SHA from November 2024) caught that
+three relevant upstream PRs had been merged the same morning — adding
+<code>group_by_cols</code> to <code>calculate_field_diversity</code>
+(fixing an off-by-one species-drop bug), an <code>aoi_id_col</code> arg
++ terra migration to <code>extract_pixel_values</code>, and a
+<code>seed</code> arg across the rarefaction functions. After
+reinstalling from HEAD, the swaps were straightforward.</p>
+<table>
+<colgroup>
+<col width="33%" />
+<col width="33%" />
+<col width="33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Function</th>
+<th>Approach</th>
+<th>Verification</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>calculate_field_diversity</code></td>
+<td>Local wrapper — AusPlots-specific transect → 5×5 subplot binning
+(<code>bin_survey_subplots</code>) stays local; per-group diversity math
+delegated via
+<code>group_by_cols = c(&quot;site_location_name&quot;, &quot;subplot_id&quot;)</code></td>
+<td>Tier 1 baseline regenerated; values bit-identical to old fixture,
+two benign attribute diffs absorbed</td>
+</tr>
+<tr class="even">
+<td><code>extract_pixel_values</code></td>
+<td>Wrapper that renames <code>aoi_id</code> → <code>subplot_id</code>
+and <code>site_name</code> → <code>site</code> post-call</td>
+<td>Tier 2 <code>pixel_summary</code> fixture bit-exact (no
+regeneration)</td>
+</tr>
+<tr class="odd">
+<td><code>calculate_spectral_metrics</code></td>
+<td>Wrapper that handles the input/output column renames and drops the
+new <code>image_type</code> column</td>
+<td>Tier 2 <code>spectral_metrics</code> fixture bit-exact under
+<code>seed = 42</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>calculate_coefficient_of_variance</code> (band-subset CV for
+the red-edge / NIR combinations) stays local rather than upstreamed; it
+still calls the local <code>calculate_cv</code> for that reason. The
+orphaned <code>calculate_sv</code>, <code>calculate_chv</code>, and
+<code>calculate_chv_nopca</code> helpers were deleted —
+<code>funx.R</code> is ~150 lines shorter.</p>
+<p><strong>Implication for the manuscript numbers in §3:</strong> none.
+The Tier 2 fixture’s bit-exact match means the production-scale outputs
+(n=999, 4 sites) would be mathematically identical if re-run. The
+flagged negative <code>species_richness ~ SV</code> slope (β = -1.28, p
+= 0.0035) is a property of the SV formula and the data, not the
+local-vs-saltbush implementation.</p>
+</div>
+<div id="whats-next" class="section level1" number="8">
+<h1><span class="header-section-number">8</span> What’s next</h1>
 <p>In rough order:</p>
 <ol style="list-style-type: decimal">
-<li><strong>Commit the unstaged <code>group_by(site, subplot_id)</code>
-fix</strong> in <code>continuous_metrics_analysis.R</code>, and fold the
-singular-fit refit logic back into the same script so the next
-<code>Rscript</code> invocation reproduces
-<code>data_out/model_fits/</code> from scratch. (Currently the CSV
-exists but the code that produced it doesn’t live in the repo.)</li>
-<li><strong>Run <code>spectral_species_analysis.R</code>
-end-to-end.</strong> This is the remaining ~hours-long compute job — 20
-seeds × 4 sites of random-forest + k-means clustering. The pre-existing
-bugs flagged in the previous report are now fixed in source, so the
-script should run cleanly. Outputs land in
-<code>data_out/spectral_species_seeds/</code> (per-seed CSVs) and
+<li><strong>Spectral-species run completion</strong> (in flight). 20
+seeds × 4 sites of random-forest + k-means clustering. Outputs will land
+in <code>data_out/spectral_species_seeds/</code> (per-seed CSVs) and
 <code>data_out/{spectral_species,mean_spectral_species,sr_model,sh_model,si_model}.rds</code>.</li>
-<li><strong>Phase 3 — saltbush migration.</strong> Replace
-<code>funx.R</code> versions of <code>extract_pixel_values()</code>,
-<code>calculate_spectral_metrics()</code>, and
-<code>calculate_field_diversity()</code> with their
-<code>saltbush::</code> equivalents one at a time, verifying each
-against the Tier 1 / Tier 2 baselines above <em>and</em> the production
-results in §3. The negative <code>species_richness ~ SV</code> slope in
-particular is worth re-checking once the swap is done.</li>
+<li><strong>Fold the singular-fit refit logic</strong> into
+<code>continuous_metrics_analysis.R</code> so the next
+<code>Rscript</code> invocation reproduces
+<code>data_out/model_fits/</code> from scratch. Currently the CSV exists
+but the code that produced it doesn’t live in the repo. Blocks the
+eventual <code>tar_make()</code> in Phase 4.</li>
+<li><strong>Optional production re-run of
+<code>continuous_metrics_analysis.R</code></strong> against the swapped
+saltbush code path. Tier 2 already proves equivalence; the re-run would
+refresh <code>data_out/model_fits/</code> and provide an extra layer of
+assurance. Worth doing once spectral-species finishes (memory
+pressure).</li>
 <li><strong>Phase 4 — targets pipeline.</strong> Replace the two
 imperative scripts with <code>_targets.R</code> so the expensive
-rarefaction and 20-seed clustering cache.</li>
+rarefaction and 20-seed clustering cache. CLAUDE.md has the target-graph
+sketch; <code>tar_visnetwork()</code> will eventually supersede it.</li>
 <li><strong>Phase 5 — publication prep.</strong> <code>renv</code>
 lockfile, full README rewrite, this report rebuilt as a
 <code>tar_render()</code> target that ties code to claims, Dockerfile,
 CI, code DOI via Zenodo–GitHub integration.</li>
 </ol>
 </div>
-<div id="pre-existing-issues-now-resolved" class="section level1" number="8">
-<h1><span class="header-section-number">8</span> Pre-existing issues —
+<div id="pre-existing-issues-now-resolved" class="section level1" number="9">
+<h1><span class="header-section-number">9</span> Pre-existing issues —
 now resolved</h1>
-<p>All four items flagged in the previous report have been addressed in
-source. Listed here so the co-author can see the diff between
-reports:</p>
+<p>All four items flagged in the previous report have been addressed and
+committed:</p>
 <ul>
 <li><code>continuous_metrics_analysis.R</code>
 <code>group_by(identifier)</code> →
-<code>group_by(site, subplot_id)</code>. <strong>Unstaged</strong>,
-needs commit.</li>
+<code>group_by(site, subplot_id)</code>. Committed as
+<code>0fa2d8d</code>.</li>
 <li><code>continuous_metrics_analysis.R</code>
 <code>left_join(..., field_diversity, ...)</code> →
 <code>left_join(..., taxonomic_diversity, ...)</code>. Fixed.</li>
@@ -3830,18 +3892,18 @@ Fixed.</li>
 stand-alone.</li>
 </ul>
 </div>
-<div id="appendix-repo-state" class="section level1" number="9">
-<h1><span class="header-section-number">9</span> Appendix — repo
+<div id="appendix-repo-state" class="section level1" number="10">
+<h1><span class="header-section-number">10</span> Appendix — repo
 state</h1>
 <p>Recent commits (most recent first):</p>
-<pre><code>ac94abe Fix pre-existing bugs and persist analysis outputs
-c252d5d Move renv to Phase 5; add Tier 2 baseline fixtures
-ebc9c38 Phase 2: seed analysis, LICENSE, CITATION.cff, README setup
-7ccfbea Expand plan: reproducibility + publication phases, Tier 2 test
-758343b Phase 1: complete raster -&gt; terra migration
-20f5b15 Set up auto-download, project docs, and test scaffolding
-0b1cf18 final continuous metrics script
-920f66c Create README.md</code></pre>
+<pre><code>8c5d322 Phase 3: delete orphaned metric helpers and close out the plan
+ac2fe01 Phase 3: delegate calculate_spectral_metrics to saltbush
+886f62d Document figures-for-publication.R + Phase 4 figure refactor
+6ba5b48 Phase 3: delegate extract_pixel_values to saltbush
+859957a Phase 3: delegate calculate_field_diversity to saltbush
+61fb231 Add Cornwell and Mesaglio to CITATION.cff
+9f72947 Add figures-for-publication.R
+888e80f Gitignore manuscript drafts and broaden log pattern</code></pre>
 <p>Working branch: <strong><code>replicate-analysis</code></strong>. All
 commits on this branch are co-authored with Claude Opus 4.7.</p>
 </div>
