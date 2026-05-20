@@ -7,6 +7,10 @@ data_out/
 # Publication figure outputs from figures-for-publication.R
 maps_graphs/
 
+# {targets} pipeline cache (Phase 4b will populate). _targets.R / _targets.yaml
+# are the pipeline definition and must stay tracked.
+_targets/
+
 # R / RStudio
 .Rhistory
 .Rapp.history
@@ -14,6 +18,20 @@ maps_graphs/
 .Ruserdata
 .Rproj.user/
 Rplots.pdf
+
+# Knitr / R Markdown render artifacts (chunk caches + per-doc figure dirs)
+*_cache/
+*_files/
+
+# Local environment / secrets — never commit
+.Renviron
+.Rprofile.local
+.env
+
+# Editor swap/backup files
+*~
+*.swp
+*.swo
 
 # macOS
 .DS_Store
