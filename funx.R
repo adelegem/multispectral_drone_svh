@@ -726,3 +726,94 @@ make_figure_6 <- function(model_results, cv_band_results) {
       plot.background  = element_rect(fill = "white", color = "white")
     )
 }
+
+
+# SPECTRAL SPECIES ------------------------------------------------------------
+
+# Compute spectral-species per-subplot summaries (richness + Shannon + Simpson)
+# for a single RNG seed across all supplied sites. Pure: takes paths in, returns
+# one data.frame, no file I/O. The driver (or a Phase 4d tar_map_rep over seeds)
+# handles persistence.
+#
+# Pipeline per seed:
+#   1. Random-sample `sample_size` pixels per raster; combine across sites.
+#   2. Train RF with proximity matrix on the combined sample (the "spectral
+#      species" signature step).
+#   3. k-means cluster the proximity matrix into `k_clusters` groups.
+#   4. Train a second RF mapping pixel values -> cluster label, then predict the
+#      cluster for every pixel of each raster.
+#   5. Aggregate per-pixel cluster labels to per-subplot richness + Shannon +
+#      Simpson via the fishnet polygons.
+#
+# Inputs are file paths (not opened SpatRaster objects) because terra objects
+# don't serialise cleanly across tar_target boundaries — matching the Phase 4d
+# branch signature avoids a second refactor when targets lands.
+spectral_species_one_seed <- function(image_paths, fishnet_paths, seed,
+                                      k_clusters = 40, sample_size = 1250) {
+  set.seed(seed)
+
+  rasters <- lapply(image_paths, terra::rast)
+
+  # Stage 1: sample pixels per raster, train RF + proximity matrix
+  sample_list <- lapply(rasters, function(r) {
+    terra::spatSample(r, size = sample_size, method = "random",
+                      na.rm = TRUE, as.df = TRUE)
+  })
+  combined_samples <- do.call(rbind, sample_list)
+
+  rf_model <- randomForest::randomForest(x = combined_samples,
+                                         proximity = TRUE, ntree = 500)
+  prox_matrix <- rf_model$proximity
+
+  # Stage 2: cluster proximity, train a per-pixel cluster classifier
+  km <- kmeans(prox_matrix, centers = k_clusters, nstart = 10)
+  combined_samples$cluster <- km$cluster
+  rf_cluster_model <- randomForest::randomForest(
+    x = combined_samples[, 1:(ncol(combined_samples) - 1)],
+    y = as.factor(combined_samples$cluster),
+    ntree = 500
+  )
+
+  # Stage 3+4+5: predict + aggregate per site
+  per_site_results <- vector("list", length(rasters))
+  for (i in seq_along(rasters)) {
+    r <- rasters[[i]]
+    fishnet_path <- fishnet_paths[[i]]
+
+    r_cluster <- terra::predict(r, rf_cluster_model, type = "response",
+                                na.rm = TRUE)
+
+    subplot <- sf::read_sf(fishnet_path) %>%
+      dplyr::select(geometry) %>%
+      dplyr::mutate(subplot_id = unlist(lapply(1:5, function(x) paste(x, 1:5, sep = "_")))) %>%
+      terra::vect()
+
+    cluster_vals <- terra::extract(r_cluster, subplot)
+    colnames(cluster_vals)[2] <- "cluster"
+    cluster_vals$subplot_id <- subplot$subplot_id[cluster_vals$ID]
+    cluster_vals <- cluster_vals %>% filter(!is.na(cluster))
+
+    spectral_richness <- cluster_vals %>%
+      group_by(subplot_id) %>%
+      summarise(spectral_species_richness = n_distinct(cluster), .groups = "drop")
+
+    community_matrix <- cluster_vals %>%
+      group_by(subplot_id, cluster) %>%
+      summarise(count = n(), .groups = "drop") %>%
+      pivot_wider(names_from = cluster, values_from = count, values_fill = 0) %>%
+      tibble::column_to_rownames("subplot_id")
+
+    per_site_results[[i]] <- data.frame(
+      subplot_id        = rownames(community_matrix),
+      spectral_richness = spectral_richness$spectral_species_richness[
+        match(rownames(community_matrix), spectral_richness$subplot_id)
+      ],
+      shannon_spectral  = vegan::diversity(community_matrix, index = "shannon"),
+      simpson_spectral  = vegan::diversity(community_matrix, index = "simpson"),
+      seed              = seed,
+      site              = substr(basename(fishnet_path), 1, 10)
+    )
+  }
+
+  do.call(rbind, per_site_results)
+}
