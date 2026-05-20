@@ -1,0 +1,261 @@
+---
+title: "multispectral_drone_svh — interim progress report"
+subtitle: "Phase 2 done + first end-to-end continuous-metrics run, for co-author review"
+date: "`r format(Sys.Date())`"
+output:
+  html_document:
+    self_contained: true
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: hide
+    df_print: paged
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE,
+                     fig.width = 8, fig.height = 4)
+knitr::opts_knit$set(root.dir = "..")
+```
+
+```{r libs}
+library(tidyverse)
+library(knitr)
+```
+
+# What this report is
+
+A snapshot of the project at the end of **Phase 2** of a planned six-phase refactor, plus the **first end-to-end production run of `continuous_metrics_analysis.R`** on all four sites at the published settings. The aim is to surface the structural and reproducibility decisions, and the first set of real model results, for review while the function-level changes (saltbush, targets) are still ahead.
+
+Two layers of output appear below:
+
+- **Baselines** — small fixtures (one site, n=99) used by the test harness to verify bit-exact reproducibility. Do **not** read these as manuscript numbers.
+- **Production results** — full four-site run at `n = 999, min_points = 133609, seed = 42`. These *are* the candidate manuscript numbers, modulo the saltbush migration that comes next.
+
+The spectral-species half of the analysis (`spectral_species_analysis.R`) has **not** been run end-to-end yet — its pre-existing bugs are now fixed in the source but the 20-seed clustering hasn't been kicked off. Flagged in "What's next" below.
+
+# Project overview
+
+Code supporting Gemmell *et al.*, "Applying the spectral variability hypothesis to arid shrublands, using multispectral drone imagery."
+
+The analysis tests whether spectral heterogeneity from drone-borne multispectral imagery (5 bands: blue, green, red, red-edge, NIR) predicts taxonomic plant diversity across four AusPlot sites in arid NSW (NSABHC0009–0012), each surveyed as a 5×5 grid of 20 m subplots.
+
+```{r status-table}
+tibble(
+  Phase = c("0 — Test scaffolding",
+            "1 — `raster` → `terra` migration",
+            "2 — Reproducibility groundwork",
+            "Continuous-metrics production run",
+            "Spectral-species production run",
+            "3 — `funx.R` → `saltbush` migration",
+            "4 — `targets` pipeline",
+            "5 — Publication prep"),
+  Status = c("done", "done", "done",
+             "done (this report)", "next",
+             "after spectral-species run", "planned", "planned"),
+  Summary = c(
+    "testthat suite, baseline fixtures, optional `seed` arg added to rarefaction functions",
+    "`create_masked_raster()` now uses `terra::rast` and the right `filetype` arg; no `raster::` calls remain",
+    "Seed wired into the analysis, LICENSE (MIT + CC-BY-4.0), CITATION.cff, README rewritten with prerequisites",
+    "All four Zenodo rasters downloaded; `continuous_metrics_analysis.R` ran end-to-end at production settings; singular-fit refit performed for `pielou_evenness` models",
+    "`spectral_species_analysis.R` pre-existing bugs fixed in source; 20-seed × 4-site clustering not yet kicked off",
+    "Replace local `extract_pixel_values()` / `calculate_spectral_metrics()` / `calculate_field_diversity()` with `saltbush::` equivalents",
+    "Replace imperative scripts with `_targets.R` so the expensive rarefaction and 20-seed clustering cache",
+    "`renv` lockfile, full README rewrite, rendered manuscript-figure report, Dockerfile, CI, code DOI via Zenodo"
+  )
+) %>%
+  kable()
+```
+
+The full six-phase plan, with rationale and testing tiers, lives in `CLAUDE.md` at the repo root.
+
+# Phase 2 reproducibility deliverables — please verify
+
+These are the three things most likely to break a reader's replication six months after publication. Worth signing off before going further.
+
+## License split
+
+- **Source code:** [MIT License](../LICENSE). Permissive, single-paragraph, widely used in scientific code.
+- **Data files** in `data/` and the multispectral rasters auto-downloaded from Zenodo: **CC-BY-4.0**, matching the Zenodo deposit ([10.5281/zenodo.17089161](https://doi.org/10.5281/zenodo.17089161)).
+
+## Author list (CITATION.cff)
+
+Taken from the Zenodo data deposit:
+
+- Adele Gemmell — ORCID [0009-0005-2419-7287](https://orcid.org/0009-0005-2419-7287)
+- Adrian Fisher — ORCID [0000-0002-6903-8053](https://orcid.org/0000-0002-6903-8053)
+
+If the manuscript author list differs, the `CITATION.cff` at the repo root needs updating before any release.
+
+## Seeded rarefaction
+
+`RAREFACTION_SEED <- 42` at the top of `continuous_metrics_analysis.R` propagates through `calculate_spectral_metrics()` and `calculate_coefficient_of_variance()` to the underlying `sample()` calls. End-user runs now reproduce CV/CHV bit-exact. The spectral-species analysis already loops over seeds 1–20 internally and doesn't need a single global seed.
+
+Verified by running the Tier 2 test (below) twice — both runs produce identical output.
+
+# Baseline outputs
+
+## Taxonomic diversity — all four sites
+
+Computed from `data/ausplots_march_24.csv` via `calculate_field_diversity()`.
+
+```{r tax-load}
+tax <- readRDS("tests/fixtures/taxonomic_diversity_baseline.rds")
+```
+
+`r nrow(tax)` subplots across `r length(unique(tax$site))` sites.
+
+```{r tax-summary}
+tax %>%
+  group_by(site) %>%
+  summarise(
+    n_subplots = n(),
+    mean_richness = round(mean(species_richness), 2),
+    mean_shannon  = round(mean(shannon_diversity), 3),
+    mean_simpson  = round(mean(simpson_diversity), 3),
+    mean_pielou   = round(mean(pielou_evenness, na.rm = TRUE), 3),
+    .groups = "drop"
+  ) %>%
+  kable(caption = "Per-site mean taxonomic diversity")
+```
+
+```{r tax-boxplot, fig.height = 3.6}
+tax %>%
+  pivot_longer(c(species_richness, shannon_diversity, simpson_diversity, pielou_evenness),
+               names_to = "metric", values_to = "value") %>%
+  mutate(metric = recode(metric,
+                         species_richness  = "Species richness",
+                         shannon_diversity = "Shannon",
+                         simpson_diversity = "Simpson",
+                         pielou_evenness   = "Pielou's evenness")) %>%
+  mutate(metric = factor(metric, levels = c("Species richness", "Shannon", "Simpson", "Pielou's evenness"))) %>%
+  ggplot(aes(site, value, fill = site)) +
+  geom_boxplot(alpha = 0.75, outlier.size = 0.6) +
+  facet_wrap(~ metric, scales = "free_y", nrow = 1) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 30, hjust = 1)) +
+  labs(x = NULL, y = NULL,
+       title = "Taxonomic diversity by site",
+       caption = "Each point is a 20 m subplot.")
+```
+
+**Data sanity flag:** NSABHC0010 returns 24 subplots instead of 25 — one subplot has no species records and is dropped by `drop_na(standardised_name)` in `calculate_field_diversity()`. Worth confirming this is expected (genuinely bare ground) rather than a data entry gap.
+
+## Spectral metrics — Tier 2, NSABHC0010 only
+
+These come from running `extract_pixel_values()` + `calculate_spectral_metrics()` on the smallest raster (the Tier 2 reproducibility test).
+
+> **Important caveat:** the test runs with `n = 99, min_points = 5000, seed = 42` — these are **not** the production-run values (`n = 999, min_points = 133609`). The numbers below should **not** be compared to manuscript values. The purpose of this fixture is to verify that the function produces *identical output across runs*, which it does.
+
+```{r spec-load}
+spec <- readRDS("tests/fixtures/spectral_metrics_baseline_NSABHC0010.rds")
+pix  <- readRDS("tests/fixtures/pixel_summary_baseline_NSABHC0010.rds")
+```
+
+```{r spec-table}
+spec %>%
+  arrange(subplot_id) %>%
+  select(subplot_id, CV, SV, CHV_nopca) %>%
+  kable(caption = "NSABHC0010 spectral metrics (test values)",
+        digits = c(NA, 4, 4, 6))
+```
+
+```{r spec-plot, fig.height = 3.2}
+spec %>%
+  pivot_longer(c(CV, SV, CHV_nopca), names_to = "metric", values_to = "value") %>%
+  ggplot(aes(metric, value, fill = metric)) +
+  geom_boxplot(alpha = 0.75, outlier.size = 0.6) +
+  facet_wrap(~ metric, scales = "free", nrow = 1) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  labs(x = NULL, y = NULL,
+       title = "NSABHC0010 spectral-metric distribution across 25 subplots",
+       caption = "n=99, min_points=5000, seed=42. Test values, not production.")
+```
+
+## Pixel extraction — NSABHC0010
+
+```{r pix-summary}
+pix %>%
+  arrange(subplot_id) %>%
+  kable(caption = "NSABHC0010: pixel count and per-band mean by subplot",
+        digits = c(NA, NA, 0, 4, 4, 4, 4, 4))
+```
+
+Pixel counts per subplot range from **`r format(min(pix$n_pixels), big.mark = ",")`** to **`r format(max(pix$n_pixels), big.mark = ",")`**. The masked raster excludes non-vegetation pixels (NDVI / NIR / red thresholds applied at preprocessing), so subplots over rockier or barer ground retain fewer pixels — worth confirming the ranking matches site knowledge.
+
+# First end-to-end run — what changed
+
+Between the last report and this one the four big things were:
+
+1. **Zenodo download finished.** All four masked rasters now live under `data/raster_images/` (~4.4 GB total). NSABHC0012, which was still in flight at the last report, completed.
+2. **A blocking bug in `continuous_metrics_analysis.R` was fixed** — `group_by(identifier)` (no such column) is now `group_by(site, subplot_id)`. Without this the run aborted immediately; see the trace at `data_out/continuous_metrics_run.log`. **This fix is currently unstaged** — needs to be committed before the next push.
+3. **Three pre-existing bugs in `spectral_species_analysis.R`** flagged in the previous report are fixed in source (missing `source('funx.R')`, missing `survey_data` definition, undefined `model` references at the model-summary lines now correctly use `sr_model` / `sh_model` / `si_model`). The script also persists its outputs via `saveRDS` now. It has not yet been *run* end-to-end — the 20-seed clustering is the next compute job.
+4. **Singular-fit refit was performed** for the three `pielou_evenness` models, which all had site random-intercept std.dev ≈ 1e-6. They were refit without the random effect and persisted alongside the mixed models in `data_out/model_fits/` (suffix `_mixed.rds` vs `_fixed.rds`). The other nine taxon × spectral models showed non-zero site variance and stayed as mixed models. Refit script is currently ad-hoc — needs to be folded back into `continuous_metrics_analysis.R` before the next run.
+
+# Production model results — `continuous_metrics_analysis.R`
+
+Full four-site run, production settings (`n = 999, min_points = 133609, seed = 42`). 12 models = 4 taxonomic metrics × 3 spectral metrics (CV / SV / log.CHV). Site is a random intercept where variance is identifiable; otherwise the model is refit as a fixed-effect linear model.
+
+```{r model-summary}
+model_sum <- readr::read_csv('data_out/model_fits/model_summaries.csv', show_col_types = FALSE)
+model_sum %>%
+  arrange(p_value) %>%
+  transmute(taxonomic_metric, spectral_metric, model_type,
+            beta = round(beta, 3),
+            p_value = signif(p_value, 3),
+            r2_marginal = round(r2_marginal, 3),
+            r2_conditional = round(r2_conditional, 3),
+            singular) %>%
+  kable(caption = "All twelve continuous-metric models, ordered by p-value.")
+```
+
+```{r model-summary-totals}
+model_sum %>%
+  summarise(total = n(),
+            singular_refit_as_fixed = sum(model_type == "fixed", na.rm = TRUE),
+            significant_p_lt_0.05  = sum(p_value < 0.05, na.rm = TRUE)) %>%
+  kable()
+```
+
+**Signals worth flagging to the co-author.** Four of twelve relationships clear p < 0.05:
+
+- `inv_simpson ~ CV` — β = +1.25, p = 6.8 × 10⁻⁵ (strongest)
+- `species_richness ~ SV` — β = -1.28, p = 0.0035 (note: **negative** — opposite to the usual SVH prediction)
+- `exp_shannon ~ CV` — β = +1.48, p = 0.0046
+- `pielou_evenness ~ log.CHV` — β = -0.020, p = 0.013 (this is a fixed-effect refit; conditional R² in the table is set equal to marginal R² by convention for the refits)
+
+CV is the spectral metric carrying most of the signal; CHV is the weakest predictor across taxonomic metrics. The negative `species_richness ~ SV` slope is worth a look — it could be a real site-confounded pattern (conditional R² = 0.76 is mostly site) or an artefact of the SV calculation that warrants comparison once `saltbush::calculate_spectral_metrics` is in place.
+
+The `pielou_evenness` row uses a fixed-effect refit because the mixed-model site variance collapsed (std.dev ≈ 1e-6). This is a methodological choice that the co-author should sign off on — alternatives are (a) drop site entirely, (b) keep site as a *fixed* effect (current choice — implicit in dropping the random intercept), or (c) report the singular mixed model with a note. The per-model diagnostic fits with the original mixed specification are kept at `data_out/model_checks/` for comparison.
+
+# What's next
+
+In rough order:
+
+1. **Commit the unstaged `group_by(site, subplot_id)` fix** in `continuous_metrics_analysis.R`, and fold the singular-fit refit logic back into the same script so the next `Rscript` invocation reproduces `data_out/model_fits/` from scratch. (Currently the CSV exists but the code that produced it doesn't live in the repo.)
+2. **Run `spectral_species_analysis.R` end-to-end.** This is the remaining ~hours-long compute job — 20 seeds × 4 sites of random-forest + k-means clustering. The pre-existing bugs flagged in the previous report are now fixed in source, so the script should run cleanly. Outputs land in `data_out/spectral_species_seeds/` (per-seed CSVs) and `data_out/{spectral_species,mean_spectral_species,sr_model,sh_model,si_model}.rds`.
+3. **Phase 3 — saltbush migration.** Replace `funx.R` versions of `extract_pixel_values()`, `calculate_spectral_metrics()`, and `calculate_field_diversity()` with their `saltbush::` equivalents one at a time, verifying each against the Tier 1 / Tier 2 baselines above *and* the production results in §3. The negative `species_richness ~ SV` slope in particular is worth re-checking once the swap is done.
+4. **Phase 4 — targets pipeline.** Replace the two imperative scripts with `_targets.R` so the expensive rarefaction and 20-seed clustering cache.
+5. **Phase 5 — publication prep.** `renv` lockfile, full README rewrite, this report rebuilt as a `tar_render()` target that ties code to claims, Dockerfile, CI, code DOI via Zenodo–GitHub integration.
+
+# Pre-existing issues — now resolved
+
+All four items flagged in the previous report have been addressed in source. Listed here so the co-author can see the diff between reports:
+
+- `continuous_metrics_analysis.R` `group_by(identifier)` → `group_by(site, subplot_id)`. **Unstaged**, needs commit.
+- `continuous_metrics_analysis.R` `left_join(..., field_diversity, ...)` → `left_join(..., taxonomic_diversity, ...)`. Fixed.
+- `spectral_species_analysis.R` undefined `model` at the model-summary lines → now `sr_model` / `sh_model` / `si_model`. Fixed.
+- `spectral_species_analysis.R` missing `source('funx.R')` and `survey_data <- read_csv(...)` at the top of the script (it was implicitly relying on a same-session run of `continuous_metrics_analysis.R`). Fixed — the script is now stand-alone.
+
+# Appendix — repo state
+
+```{r commits, results = "asis"}
+commits <- system("git log --oneline -8", intern = TRUE)
+cat("Recent commits (most recent first):\n\n```\n", paste(commits, collapse = "\n"), "\n```\n", sep = "")
+```
+
+Working branch: **`replicate-analysis`**. All commits on this branch are co-authored with Claude Opus 4.7.

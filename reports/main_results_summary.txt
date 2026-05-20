@@ -1,0 +1,128 @@
+--- spectral_biodiversity_model_results ---
+                 taxonomic_metric spectral_metric r2_marginal r2_conditional
+Marginal R2...1  species_richness              CV 0.065314311      0.4698380
+Marginal R2...2  species_richness              SV 0.072959836      0.7626277
+Marginal R2...3  species_richness         log.CHV 0.011527597      0.6261946
+Marginal R2...4       exp_shannon              CV 0.306753779      0.3946720
+Marginal R2...5       exp_shannon              SV 0.032592172      0.6164311
+Marginal R2...6       exp_shannon         log.CHV 0.022263669      0.5536398
+Marginal R2...7       inv_simpson              CV 0.302688194      0.3571501
+Marginal R2...8       inv_simpson              SV 0.001169103      0.4120276
+Marginal R2...9       inv_simpson         log.CHV 0.023282235      0.4580549
+Marginal R2...10  pielou_evenness              CV 0.002374659             NA
+                         beta beta_ci_lower beta_ci_upper intercept
+Marginal R2...1   0.862371965   -1.04016260     2.7649065 7.4903066
+Marginal R2...2  -1.279432484   -2.13782000    -0.4210450 7.4925595
+Marginal R2...3  -0.423428489   -1.31217681     0.4653198 7.4915921
+Marginal R2...4   1.478525894    0.45662409     2.5004277 5.8047857
+Marginal R2...5  -0.585549430   -1.34263793     0.1715391 5.8059226
+Marginal R2...6  -0.451206625   -1.19483090     0.2924177 5.8059717
+Marginal R2...7   1.248707107    0.63430559     1.8631086 4.7734608
+Marginal R2...8  -0.081081203   -0.78917933     0.6270169 4.7743350
+Marginal R2...9  -0.372448802   -1.02880578     0.2839082 4.7748586
+Marginal R2...10 -0.003923696   -0.02035729     0.0125099 0.8744484
+                      p_value significance converged is_singular
+Marginal R2...1  3.743238e-01           no      TRUE       FALSE
+Marginal R2...2  3.485295e-03          yes      TRUE       FALSE
+Marginal R2...3  3.504121e-01           no      TRUE       FALSE
+Marginal R2...4  4.571829e-03          yes      TRUE       FALSE
+Marginal R2...5  1.295495e-01           no      TRUE       FALSE
+Marginal R2...6  2.343447e-01           no      TRUE       FALSE
+Marginal R2...7  6.792976e-05          yes      TRUE       FALSE
+Marginal R2...8  8.224252e-01           no      TRUE       FALSE
+Marginal R2...9  2.660613e-01           no      TRUE       FALSE
+Marginal R2...10 6.398116e-01           no      TRUE        TRUE
+
+--- cv_biodiversity_model_results ---
+                                  bands taxonomic_metric spectral_metric
+Marginal R2...1            red.edge_nir species_richness              CV
+Marginal R2...2            red.edge_nir      exp_shannon              CV
+Marginal R2...3            red.edge_nir      inv_simpson              CV
+Marginal R2...4            red.edge_nir  pielou_evenness              CV
+Marginal R2...5      green_red.edge_nir species_richness              CV
+Marginal R2...6      green_red.edge_nir      exp_shannon              CV
+Marginal R2...7      green_red.edge_nir      inv_simpson              CV
+Marginal R2...8      green_red.edge_nir  pielou_evenness              CV
+Marginal R2...9  green_red_red.edge_nir species_richness              CV
+Marginal R2...10 green_red_red.edge_nir      exp_shannon              CV
+                 r2_marginal r2_conditional    beta_spec beta_spec_ci_lower
+Marginal R2...1  0.410853875      0.5040422  2.240038388         0.94780040
+Marginal R2...2  0.426563787      0.4773208  1.832126851         1.12973553
+Marginal R2...3  0.372951214      0.4193398  1.425710554         0.86100116
+Marginal R2...4  0.002012799             NA -0.003630362        -0.02014870
+Marginal R2...5  0.316381030      0.4618306  1.894001654         0.16075337
+Marginal R2...6  0.397722967      0.4508794  1.743066813         0.99608245
+Marginal R2...7  0.351914090      0.3962211  1.369479512         0.81263658
+Marginal R2...8  0.001663492             NA -0.003296136        -0.01979626
+Marginal R2...9  0.048069596      0.4810470  0.747628754        -1.11633091
+Marginal R2...10 0.315420906      0.3953258  1.502640387         0.48724298
+                 beta_spec_ci_upper       p_spec sig_spec intercept
+Marginal R2...1          3.53227638 6.800151e-04      yes 7.4900113
+Marginal R2...2          2.53451817 3.180980e-07      yes 5.8039377
+Marginal R2...3          1.99041995 7.487138e-07      yes 4.7725418
+Marginal R2...4          0.01288798 6.666455e-01       no 0.8744237
+Marginal R2...5          3.62724994 3.221405e-02      yes 7.4901616
+Marginal R2...6          2.49005118 4.795971e-06      yes 5.8043590
+Marginal R2...7          1.92632245 1.433676e-06      yes 4.7729416
+Marginal R2...8          0.01320399 6.954050e-01       no 0.8743821
+Marginal R2...9          2.61158842 4.317879e-01       no 7.4904055
+Marginal R2...10         2.51803779 3.726137e-03      yes 5.8047958
+
+--- spectral_taxonomic_diversity ---
+         site subplot_id        CV           SV    CHV_nopca   log.CHV
+1  NSABHC0009       E1_1 0.3591763 0.0017600010 2.633563e-08 -17.45234
+2  NSABHC0009       E1_2 0.3449892 0.0017383559 2.922462e-08 -17.34825
+3  NSABHC0009       E1_3 0.3087045 0.0011842414 1.897540e-08 -17.78012
+4  NSABHC0009       E1_4 0.3327253 0.0014381053 1.987502e-08 -17.73380
+5  NSABHC0009       E1_5 0.3490609 0.0016785985 1.963027e-08 -17.74619
+6  NSABHC0009       E2_1 0.4131649 0.0026086655 2.555595e-08 -17.48240
+7  NSABHC0009       E2_2 0.3502733 0.0015858932 2.749586e-08 -17.40923
+8  NSABHC0009       E2_3 0.3031795 0.0010732462 1.836983e-08 -17.81256
+9  NSABHC0009       E2_4 0.2881528 0.0008626944 1.513120e-08 -18.00651
+10 NSABHC0009       E2_5 0.3257477 0.0014512225 1.645223e-08 -17.92280
+   species_richness shannon_diversity simpson_diversity pielou_evenness
+1                 4          1.187416         0.6574394       0.8565394
+2                10          2.079151         0.8355556       0.9029639
+3                13          2.322019         0.8797062       0.9052885
+4                12          1.884012         0.7372176       0.7581822
+5                 8          2.014036         0.8593750       0.9685464
+6                 7          1.785486         0.8188776       0.9175583
+7                11          2.201443         0.8718367       0.9180730
+8                15          2.512341         0.9032258       0.9277306
+9                14          2.198969         0.8264463       0.8332403
+10               13          2.452708         0.9060642       0.9562404
+   exp_shannon inv_simpson
+1     3.278598    2.919192
+2     7.997678    6.081081
+3    10.196241    8.312977
+4     6.579851    3.805430
+5     7.493497    7.111111
+6     5.962477    5.521127
+7     9.038045    7.802548
+8    12.333771   10.333333
+9     9.015712    5.761905
+10   11.619772   10.645570
+
+--- cv_values ---
+   species_richness exp_shannon inv_simpson pielou_evenness       site
+1                 4    3.278598    2.919192       0.8565394 NSABHC0009
+2                 4    3.278598    2.919192       0.8565394 NSABHC0009
+3                 4    3.278598    2.919192       0.8565394 NSABHC0009
+4                 4    3.278598    2.919192       0.8565394 NSABHC0009
+5                10    7.997678    6.081081       0.9029639 NSABHC0009
+6                10    7.997678    6.081081       0.9029639 NSABHC0009
+7                10    7.997678    6.081081       0.9029639 NSABHC0009
+8                10    7.997678    6.081081       0.9029639 NSABHC0009
+9                13   10.196241    8.312977       0.9052885 NSABHC0009
+10               13   10.196241    8.312977       0.9052885 NSABHC0009
+   subplot_id        CV                  bands
+1        E1_1 0.3591763              all_bands
+2        E1_1 0.3471872           red.edge_nir
+3        E1_1 0.3694890 green_red_red.edge_nir
+4        E1_1 0.3488747     green_red.edge_nir
+5        E1_2 0.3449892              all_bands
+6        E1_2 0.3513772           red.edge_nir
+7        E1_2 0.3603110 green_red_red.edge_nir
+8        E1_2 0.3452226     green_red.edge_nir
+9        E1_3 0.3087045              all_bands
+10       E1_3 0.3218050           red.edge_nir

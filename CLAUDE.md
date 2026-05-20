@@ -11,8 +11,13 @@ The analysis tests whether spectral heterogeneity from drone-borne multispectral
 - `funx.R` — all the reusable functions: raster I/O, masking, pixel extraction, the three spectral-metric calculators, `calculate_field_diversity` (taxonomic diversity from AusPlots transect hits), and `download_zenodo_rasters` (added recently — auto-fetches the 4 GeoTIFFs from Zenodo).
 - `data/ausplots_march_24.csv` — field survey hits.
 - `data/fishnets/NSABHC00{09..12}_fishnet.shp` — the 5×5 subplot grids per site.
-- `data/raster_images/` — gitignored; populated on first run by `download_zenodo_rasters()` from Zenodo 10.5281/zenodo.17089161 (~4.6 GB, 4 files).
-- `data_out/` — gitignored; intermediate outputs.
+- `data/raster_images/` — gitignored; populated on first run by `download_zenodo_rasters()` from Zenodo 10.5281/zenodo.17089161 (~4.4 GB, 4 files: 0009 1.5 GB, 0010 554 MB, 0011 957 MB, 0012 1.5 GB).
+- `data_out/` — gitignored; intermediate outputs from the analysis scripts:
+  - `spectral_taxonomic_diversity.rds`, `cv_values.rds` — extracted pixel-derived metrics joined to taxonomic diversity.
+  - `spectral_biodiversity_model_results.rds`, `cv_biodiversity_model_results.rds` — original 12-model and CV-band-combo loop output, written directly by `continuous_metrics_analysis.R`.
+  - `model_checks/` — diagnostic per-model `.rds` (mixed-effect specification only) plus `model_checks.log`. Use these to inspect random-effect variances before deciding whether a refit is warranted.
+  - `model_fits/` — final fits used for reporting. One `.rds` per taxonomic × spectral metric, suffixed `_mixed` or `_fixed` depending on whether the singular-fit refit (see Conventions) kicked in, plus `model_summaries.csv` and `top_significant_models.csv`.
+- `reports/` — gitignored; rendered HTML reports + their sources (currently `interim_progress.Rmd` / `.html`). Read this for the current running state of the analysis.
 
 ## Required R packages
 
@@ -23,6 +28,12 @@ The analysis tests whether spectral heterogeneity from drone-borne multispectral
 - Per-subplot IDs are `"row_col"` (e.g. `"3_2"`); after joining across sites the analysis prefixes them with a site letter (`E`/`G`/`S`/`C`) to keep them unique.
 - Bands must be stacked in wavelength order (blue, green, red, red-edge, NIR) — several functions assume this implicitly.
 - Site names are the AusPlot IDs (`NSABHC0009`..`0012`) and are extracted from filenames via `str_extract(basename(x), "^[^_]+")`.
+- **Rarefaction seed:** `RAREFACTION_SEED <- 42` at the top of `continuous_metrics_analysis.R` is threaded into `calculate_spectral_metrics()` and `calculate_coefficient_of_variance()` so CV/CHV are bit-exact reproducible across runs. The spectral-species analysis loops over seeds 1–20 internally and does not need a single global seed.
+- **Singular-fit refit:** the three `pielou_evenness` mixed models (CV, SV, log.CHV) consistently produce site random-intercept std.dev ≈ 1e-6 (`performance::check_singularity() == TRUE`). The convention is to refit those models as fixed-effect linear models (no `(1 | site)`) and persist them under `data_out/model_fits/` with the suffix `_fixed`. The original mixed-model diagnostic fits stay at `data_out/model_checks/` for comparison. The refit logic is currently ad-hoc and needs to be folded back into `continuous_metrics_analysis.R` — until then, the script's own `*_model_results.rds` outputs contain `NA` for the singular fits' conditional R² and the post-hoc CSVs in `model_fits/` are the canonical results.
+
+## Current analysis state
+
+For the running state of the analysis (which scripts have been run end-to-end, current model results, decisions awaiting co-author review) see `reports/interim_progress.Rmd`. That report is the canonical place for transient state. CLAUDE.md only documents durable structure, conventions, and the phase plan.
 
 ---
 
