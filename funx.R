@@ -482,14 +482,14 @@ add_site_prefix <- function(data) {
 # refit as a fixed-effect lm without (1 | site). Returns the fitted model
 # (class glmmTMB or lm). Caller doesn't need to know which kind it got —
 # summarise_spectral_biodiversity_model() handles both.
-fit_spectral_biodiversity_model <- function(data, tax_metric, spec_metric) {
-  mixed_formula <- as.formula(
-    paste(tax_metric, "~ scale(", spec_metric, ") + (1 | site)")
-  )
+fit_spectral_biodiversity_model <- function(data, tax_metric, spec_metric,
+                                             scale_predictor = TRUE) {
+  pred_expr <- if (scale_predictor) paste0("scale(", spec_metric, ")") else spec_metric
+  mixed_formula <- as.formula(paste(tax_metric, "~", pred_expr, "+ (1 | site)"))
   mixed <- glmmTMB::glmmTMB(mixed_formula, data = data)
 
   if (isTRUE(performance::check_singularity(mixed))) {
-    fixed_formula <- as.formula(paste(tax_metric, "~ scale(", spec_metric, ")"))
+    fixed_formula <- as.formula(paste(tax_metric, "~", pred_expr))
     return(stats::lm(fixed_formula, data = data))
   }
 
@@ -500,8 +500,9 @@ fit_spectral_biodiversity_model <- function(data, tax_metric, spec_metric) {
 # either glmmTMB (mixed) or lm (singular-refit fallback). `model_kind`
 # records which was used; `is_singular` is TRUE only when the mixed fit was
 # singular and the refit kicked in.
-summarise_spectral_biodiversity_model <- function(model, tax_metric, spec_metric) {
-  spec_term <- paste0("scale(", spec_metric, ")")
+summarise_spectral_biodiversity_model <- function(model, tax_metric, spec_metric,
+                                                  scale_predictor = TRUE) {
+  spec_term <- if (scale_predictor) paste0("scale(", spec_metric, ")") else spec_metric
 
   if (inherits(model, "glmmTMB")) {
     coefs     <- summary(model)$coefficients$cond

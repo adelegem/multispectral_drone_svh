@@ -358,24 +358,108 @@ phase_4c_targets <- list(
 
 
 # =============================================================================
-# PHASE 4d — 20-seed spectral species  (STUB)
+# PHASE 4d — 20-seed spectral species
 # =============================================================================
+# spectral_species_one_seed is RNG-deterministic given a seed, so per-seed
+# branches are independent and trivially cacheable. Serial runtime is ~40 h
+# (~2 h per seed, measured from data_out/spectral_species_seeds checkpoints
+# May 20-21 2026). With crew_controller_local(workers = N) the seeds run in
+# parallel; not configured here because each terra::predict on a 1.5 GB
+# raster has real RAM cost and the right N depends on the host.
 #
-#   spectral_species_seed_<s>    tar_map_rep(seeds = 1:20) calling
-#                                spectral_species_one_seed(image_paths,
-#                                fishnet_paths, seed, k_clusters = 40,
-#                                sample_size = 1250)
-#
-#   spectral_species             tar_combine across seeds
-#
-#   mean_spectral_species        group_by(subplot_id, site) %>% summarise(mean)
-#                                joined with taxonomic_diversity
-#
-#   ss_models (sr_model, sh_model, si_model)
-#                                three glmmTMB fits against mean_spectral_species
-#
-# Cost: ~40 h serial. With crew_controller_local(workers = 4): ~10 h, modulo
-# RAM (single-process peak is dominated by terra::predict on a 1.5 GB raster).
+# The SS models (richness, Shannon, Simpson) pair each spectral metric with
+# its matching taxonomic metric — 3 models, not the 4x3 cross-product of
+# Phase 4c — and use raw (unscaled) predictors to match
+# spectral_species_analysis.R lines 82, 87, 92.
+
+# Per-seed tar_map. Each branch reads the per-site raster + fishnet file
+# paths from the Phase 4b file targets — terra::SpatRasters don't serialise
+# across target boundaries, so spectral_species_one_seed() opens them
+# itself given paths.
+ss_seed_branches <- tar_map(
+  values = tibble::tibble(seed = 1:20),
+  names  = seed,
+  unlist = FALSE,
+  tar_target(
+    spectral_species_seed,
+    spectral_species_one_seed(
+      image_paths   = ss_image_paths,
+      fishnet_paths = ss_fishnet_paths,
+      seed          = seed,
+      k_clusters    = 40,
+      sample_size   = 1250
+    )
+  )
+)
+
+# Per-pair model + summary tar_map for the three SS models. tar_map names:
+# ss_model_<tax>_<ss>, ss_summary_<tax>_<ss>. scale_predictor = FALSE matches
+# the legacy spectral_species_analysis.R (no scale() on the predictor).
+ss_model_branches <- tar_map(
+  values = tibble::tribble(
+    ~tax_metric,         ~ss_metric,
+    "species_richness",  "spectral_richness",
+    "shannon_diversity", "shannon_spectral",
+    "simpson_diversity", "simpson_spectral"
+  ),
+  names  = c(tax_metric, ss_metric),
+  unlist = FALSE,
+  tar_target(ss_model,
+             fit_spectral_biodiversity_model(
+               mean_spectral_species, tax_metric, ss_metric,
+               scale_predictor = FALSE)),
+  tar_target(ss_summary,
+             summarise_spectral_biodiversity_model(
+               ss_model, tax_metric, ss_metric,
+               scale_predictor = FALSE))
+)
+
+phase_4d_targets <- list(
+
+  # ---- file-path vectors fed to spectral_species_one_seed --------------
+  # tar_combine over the Phase 4b file targets so this stays in sync with
+  # the per-site raster/fishnet content tracking — any raster change
+  # invalidates downstream seeds correctly.
+  tar_combine(ss_image_paths,
+              phase_4b_branches$raster,
+              command = c(!!!.x)),
+  tar_combine(ss_fishnet_paths,
+              phase_4b_branches$fishnet,
+              command = c(!!!.x)),
+
+  # ---- 20 per-seed spectral-species tibbles ----------------------------
+  ss_seed_branches,
+
+  # ---- combined long table across seeds --------------------------------
+  tar_combine(spectral_species,
+              ss_seed_branches$spectral_species_seed,
+              command = dplyr::bind_rows(!!!.x)),
+
+  # ---- per-subplot mean across the 20 seeds + taxonomic join -----------
+  # Matches spectral_species_analysis.R lines 60-78: group, summarise,
+  # left_join with taxonomic_diversity, then add the E/G/S/C prefix
+  # (same convention as spectral_taxonomic_diversity above).
+  tar_target(
+    mean_spectral_species,
+    spectral_species %>%
+      dplyr::group_by(subplot_id, site) %>%
+      dplyr::summarise(
+        spectral_richness = mean(spectral_richness),
+        shannon_spectral  = mean(shannon_spectral),
+        simpson_spectral  = mean(simpson_spectral),
+        .groups = "drop"
+      ) %>%
+      dplyr::left_join(taxonomic_diversity,
+                       by = c("site", "subplot_id")) %>%
+      add_site_prefix()
+  ),
+
+  # ---- per-pair model fits + tar_combine'd summary table --------------
+  ss_model_branches,
+  tar_combine(spectral_species_model_results,
+              ss_model_branches$ss_summary,
+              command = dplyr::bind_rows(!!!.x))
+)
 
 
 # =============================================================================
@@ -393,6 +477,6 @@ phase_4c_targets <- list(
 
 # =============================================================================
 # Return value — `targets` reads the list at the bottom of _targets.R.
-# Currently Phases 4b + 4c.
+# Currently Phases 4b + 4c + 4d.
 # =============================================================================
-list(phase_4b_targets, phase_4c_targets)
+list(phase_4b_targets, phase_4c_targets, phase_4d_targets)
