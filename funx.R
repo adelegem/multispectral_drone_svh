@@ -801,7 +801,133 @@ make_figure_6 <- function(model_results, cv_band_results) {
 }
 
 
-# SPECTRAL SPECIES ------------------------------------------------------------
+# Workflow diagram — hand-built spec (not auto-generated from tar_network()).
+#
+# The pipeline DAG has ~80 nodes; the paper figure needs ~13. Every conceptual
+# box here is a manual collapse of one or more `tar_target`s, so the figure
+# stays the same shape even as 4c/4d expand the implementation graph. The
+# anti-drift property comes from the consistency check at the bottom: if
+# `_targets.R` adds a target that doesn't fit any existing conceptual box, the
+# function warns so future-you decides whether the figure needs updating.
+#
+# `version = "manuscript"` — preprocessing flows into the analysis without a
+# boundary; reads as part of the methods narrative.
+# `version = "readme"`     — preprocessing wrapped in a dashed rectangle with
+# "done once; outputs archived on Zenodo" so users reproducing the code know
+# they download masked rasters and skip preprocessing entirely.
+#
+# Requires ggraph + tidygraph + ggforce loaded.
+make_figure_workflow <- function(version = c("manuscript", "readme")) {
+  version <- match.arg(version)
+
+  nodes <- tibble::tribble(
+    ~name,              ~label,                                                                             ~x,  ~y, ~group,
+    "drone_tiles",      "Drone tiles\n(4 sites)",                                                          -2,  7,  "preprocess",
+    "training",         "Visually classified\ntraining pixels\n(veg / non-veg,\nshadow / non-shadow)",      2,  7,  "preprocess",
+    "preprocess",       "Pre-processing\n(Pix4D ortho +\nillumination correction +\nband stacking)",      -2,  6,  "preprocess",
+    "thresholds",       "ROC curves →\nper-site thresholds\n(NIR, NDVI)",                                   2,  6,  "preprocess",
+    "masked_rasters",   "Masked multiband\nraster\n(4 sites, 5 bands)",                                     0,  5,  "preprocess",
+    "fishnets",         "Fishnets\n(5×5 grid\nper site)",                                                -2.5,  5,  "input",
+    "survey",           "AusPlots survey\n(March 2024)",                                                  2.5,  5,  "input",
+    "spectral_metrics", "Spectral metrics\nCV / SV / 5D CHV\nrarefied n=999, seed=42",                   -2.5,  4,  "analysis",
+    "spectral_species", "Spectral species\nRF + k-means k=40\n×20 seeds averaged →\nrichness, H', 1/D",     0,  4,  "analysis",
+    "taxonomic",        "Taxonomic diversity\nS, exp(H'), 1/D, J'",                                       2.5,  4,  "analysis",
+    "cv_subsets",       "CV across\nband subsets (×3)",                                                  -2.5,  3,  "analysis",
+    "models",           "Mixed models per pair\ny ~ x + (1|site)\nsingular-fit refit to lm\nwhen site variance ≈ 0", 0, 2, "model",
+    "figures",          "Figure 5: spectral × taxonomic\nFigure 6: CV β across bands",                      0,  1,  "output"
+  )
+
+  edges <- tibble::tribble(
+    ~from,              ~to,
+    "drone_tiles",      "preprocess",
+    "training",         "thresholds",
+    "preprocess",       "masked_rasters",
+    "thresholds",       "masked_rasters",
+    "masked_rasters",   "spectral_metrics",
+    "masked_rasters",   "spectral_species",
+    "fishnets",         "spectral_metrics",
+    "fishnets",         "spectral_species",
+    "survey",           "taxonomic",
+    "spectral_metrics", "cv_subsets",
+    "spectral_metrics", "models",
+    "cv_subsets",       "models",
+    "spectral_species", "models",
+    "taxonomic",        "models",
+    "models",           "figures"
+  )
+
+  graph <- tidygraph::tbl_graph(nodes = nodes, edges = edges, directed = TRUE)
+
+  layout <- ggraph::create_layout(graph, layout = "manual",
+                                  x = nodes$x, y = nodes$y)
+
+  p <- ggraph::ggraph(layout) +
+    ggraph::geom_edge_link(
+      ggplot2::aes(
+        start_cap = ggraph::label_rect(node1.label,
+                                       padding  = ggplot2::margin(2.5, 3.5, 2.5, 3.5, "mm"),
+                                       fontsize = 8.5),
+        end_cap   = ggraph::label_rect(node2.label,
+                                       padding  = ggplot2::margin(2.5, 3.5, 2.5, 3.5, "mm"),
+                                       fontsize = 8.5)
+      ),
+      arrow      = grid::arrow(length = grid::unit(2.5, "mm"), type = "closed"),
+      colour     = "grey40",
+      edge_width = 0.5
+    ) +
+    ggraph::geom_node_label(
+      ggplot2::aes(label = label, fill = group),
+      colour        = "black",
+      label.padding = grid::unit(c(2, 3, 2, 3), "mm"),
+      lineheight    = 0.9,
+      size          = 3
+    ) +
+    ggplot2::scale_fill_manual(
+      values = c(
+        preprocess = "grey92",
+        input      = "lightyellow",
+        analysis   = "#cfe6f4",
+        model      = "#cce8cc",
+        output     = "wheat"
+      ),
+      guide = "none"
+    ) +
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(add = 1.2)) +
+    ggplot2::scale_y_continuous(expand = ggplot2::expansion(add = 0.3)) +
+    ggplot2::coord_cartesian(clip = "off") +
+    ggplot2::theme_void() +
+    ggplot2::theme(
+      plot.background = ggplot2::element_rect(fill = "white", color = "white"),
+      plot.margin     = grid::unit(c(6, 6, 6, 6), "mm")
+    )
+
+  if (version == "readme") {
+    # Hand-placed dashed boundary + label. Tight rect around the four
+    # preprocessing nodes at y=6 and y=7 (drone_tiles, training, preprocess,
+    # thresholds) plus masked_rasters at y=5. The label sits in the
+    # left margin of the rect's top so it doesn't overlap nodes.
+    p <- p +
+      ggplot2::annotate(
+        "rect",
+        xmin     = -3.4, xmax = 3.4,
+        ymin     =  4.4, ymax = 7.6,
+        fill     = NA,
+        colour   = "grey40",
+        linetype = "dashed",
+        linewidth = 0.4
+      ) +
+      ggplot2::annotate(
+        "text",
+        x      = -3.4, y = 7.6,
+        hjust  = 0,    vjust = -0.2,
+        label  = "Preprocessing — done once; outputs archived on Zenodo",
+        colour = "grey25",
+        size   = 3.2
+      )
+  }
+
+  p
+}
 
 # Compute spectral-species per-subplot summaries (richness + Shannon + Simpson)
 # for a single RNG seed across all supplied sites. Pure: takes paths in, returns
