@@ -68,11 +68,19 @@ spectral_metrics <- c("CV", "SV", "log.CHV")
 # linear mixed-effect models: <tax> ~ scale(<spec>) + (1 | site).
 # expand_grid varies the last column fastest, so this iterates spec
 # within tax, matching the prior nested-loop row order.
+# fit_spectral_biodiversity_model returns a model object (auto-refits as lm
+# if the mixed fit is singular — pielou_evenness triggers this);
+# summarise_spectral_biodiversity_model extracts the one-row summary.
 spectral_biodiversity_model_results <- expand_grid(
   tax_metric  = taxonomic_metrics,
   spec_metric = spectral_metrics
 ) %>%
-  pmap_dfr(fit_spectral_biodiversity_model, data = spectral_taxonomic_diversity)
+  pmap_dfr(function(tax_metric, spec_metric) {
+    model <- fit_spectral_biodiversity_model(
+      spectral_taxonomic_diversity, tax_metric, spec_metric
+    )
+    summarise_spectral_biodiversity_model(model, tax_metric, spec_metric)
+  })
 
 # CALCULATE CV FOR BAND COMBINATIONS + NDVI
 
@@ -113,11 +121,15 @@ band_combinations <- c("red.edge_nir", "green_red.edge_nir", "green_red_red.edge
 
 # Outer = band_combo, inner = tax_metric — last column varies fastest under
 # expand_grid, matching the prior nested-loop row order.
+# Same fit/summarise split as the spectral models above.
 cv_biodiversity_model_results <- expand_grid(
   band_combo = band_combinations,
   tax_metric = taxonomic_metrics
 ) %>%
-  pmap_dfr(fit_cv_band_model, data = cv_values)
+  pmap_dfr(function(band_combo, tax_metric) {
+    model <- fit_cv_band_model(cv_values, tax_metric, band_combo)
+    summarise_cv_band_model(model, tax_metric, band_combo)
+  })
 
 # Persist outputs for downstream reporting. data_out/ is gitignored.
 if (!dir.exists("data_out")) dir.create("data_out", recursive = TRUE)

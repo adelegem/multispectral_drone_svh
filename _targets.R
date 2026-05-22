@@ -148,15 +148,39 @@ sites_lookup <- tibble::tibble(
   fishnet_file = file.path("data/fishnets",       paste0(SITES, "_fishnet.shp"))
 )
 
+# Per-site file + extraction tar_map.
+#
+# unlist = FALSE keeps the structured list of branches (accessible as
+# phase_4b_branches$pixel_values, etc.) so Phase 4c's tar_combine can
+# fan back in over $pixel_values without re-enumerating site names.
+#
+# raster_<site>:  depends on raster_files (the download gate — ensures
+#                 the .tif exists on a fresh checkout) then content-tracks
+#                 the single per-site .tif. A change to one raster
+#                 invalidates only that site's pixel_values.
+# fishnet_<site>: shapefiles are tracked in git; just content-track each
+#                 .shp directly (sidecar .dbf/.shx/.prj changes are
+#                 unusual enough to not warrant per-sidecar tracking).
+# pixel_values_<site>: standard extraction; the saltbush wrapper handles
+#                      one site at a time.
+phase_4b_branches <- tar_map(
+  values = sites_lookup,
+  names  = site,
+  unlist = FALSE,
+  tar_target(raster,  { raster_files; raster_file }, format = "file"),
+  tar_target(fishnet, fishnet_file,                  format = "file"),
+  tar_target(pixel_values,
+             extract_pixel_values(raster, fishnet, WAVELENGTHS))
+)
+
 phase_4b_targets <- list(
 
   # ---- file inputs --------------------------------------------------------
   # `format = "file"` tracks a file by content hash + mtime. Subsequent
   # tar_make() calls skip if unchanged.
-
   tar_target(survey_csv, "data/ausplots_march_24.csv", format = "file"),
 
-  # Zenodo downloader gates the per-site raster file targets below. It's
+  # Zenodo downloader gates the per-site raster file targets above. It's
   # idempotent (skips files already present at expected size) and returns
   # the four paths. NOT format = "file" on purpose — content-tracking the
   # 4-file bundle would invalidate every per-site branch on a single
@@ -172,69 +196,160 @@ phase_4b_targets <- list(
                readr::read_csv(survey_csv, show_col_types = FALSE)
              )$final_results),
 
-  # ---- per-site file + pixel extraction ----------------------------------
-  # tar_map expands this block into one set of targets per row of
-  # sites_lookup:
-  #   raster_NSABHC0009, fishnet_NSABHC0009, pixel_values_NSABHC0009, ...
-  #
-  # raster_<site>:  depends on raster_files (the download gate — ensures
-  #                 the .tif exists on a fresh checkout) then content-tracks
-  #                 the single per-site .tif. A change to one raster
-  #                 invalidates only that site's pixel_values.
-  # fishnet_<site>: shapefiles are tracked in git; just content-track each
-  #                 .shp directly (sidecar .dbf/.shx/.prj changes are
-  #                 unusual enough to not warrant per-sidecar tracking).
-  # pixel_values_<site>: standard extraction; saltbush::extract_pixel_values
-  #                      under the wrapper handles one site at a time.
-  tar_map(
-    values = sites_lookup,
-    names  = site,        # use only `site` for branch suffixes
-    tar_target(raster,
-               { raster_files; raster_file },
-               format = "file"),
-    tar_target(fishnet, fishnet_file, format = "file"),
-    tar_target(pixel_values,
-               extract_pixel_values(raster, fishnet, WAVELENGTHS))
-  )
-
-  # tar_combine() to bind the four pixel_values_<site> targets back into one
-  # tibble would slot in here, once we're ready to consume them in 4c.
+  phase_4b_branches
 )
 
 
 # =============================================================================
-# PHASE 4c — spectral metrics + continuous-metrics models  (STUB)
+# PHASE 4c — spectral metrics + continuous-metrics models
 # =============================================================================
-# Wires the existing continuous_metrics_analysis.R flow into targets:
+# Mirrors continuous_metrics_analysis.R: rarefied spectral metrics, CV across
+# band subsets, joined with taxonomic diversity, then the 12 + 12 fixed/mixed
+# models. spectral_metrics is a single target rather than per-site because the
+# n = 999 rarefaction draw is RNG-order-sensitive — splitting per site would
+# change the published numbers.
 #
-#   spectral_metrics_<site>      tar_map over SITES; calls
-#                                calculate_spectral_metrics(..., seed = 42,
-#                                n = 999) returning CV/SV/CHV_nopca
-#
-#   spectral_metrics             tar_combine across sites + log.CHV mutation
-#                                + add_site_prefix()
-#
-#   cv_band_combos_<bands>_<site>
-#                                tar_map over BAND_SUBSETS × SITES; calls
-#                                calculate_coefficient_of_variance()
-#
-#   cv_band_combos               tar_combine across sites and band subsets
-#
-#   spectral_taxonomic_diversity left_join(spectral_metrics, taxonomic_diversity)
-#
-#   model_<tax>_<spec>           tar_map over (taxonomic_metric × spectral_metric)
-#                                calling fit_spectral_biodiversity_model();
-#                                each branch holds the fitted glmmTMB / lm
-#                                object (for figures + post-hoc diagnostics)
-#
-#   model_results                tar_combine; one-row-per-fit summary tibble
-#
-#   cv_band_results_<bands>_<tax> tar_map over (band_combo × taxonomic_metric)
-#                                 calling fit_cv_band_model()
-#
-#   cv_band_results              tar_combine to one tibble
-#
-# Open: see design decision #5 (where the singular-refit lives).
+# Per-pair model targets hold the fitted glmmTMB / lm object so Phase 5
+# figures can pull cached fits via tar_read() for predicted lines. Per-pair
+# summary targets are tar_combine'd into the model_results tibbles.
+
+# Per-band-subset CV tar_map. Uses a list-column for the wavelength vector;
+# `band_vec` substitutes as the literal R expression, `bands_label` as a
+# string — avoids the name clash that occurs when a tar_map column name
+# matches a function arg or output column name.
+cv_branches <- tar_map(
+  values = tibble::tibble(
+    bands_label = names(BAND_SUBSETS),
+    band_vec    = unname(BAND_SUBSETS)
+  ),
+  names  = bands_label,
+  unlist = FALSE,
+  tar_target(
+    cv_subset,
+    calculate_coefficient_of_variance(
+      pixel_values,
+      wavelengths = band_vec,
+      min_points  = min_points,
+      n           = 999,
+      rarefaction = TRUE,
+      seed        = RAREFACTION_SEED
+    ) %>% dplyr::mutate(bands = bands_label)
+  )
+)
+
+# Per-pair model + summary tar_map for spectral metrics models.
+# tar_map names: model_<tax>_<spec>, summary_<tax>_<spec>.
+model_branches <- tar_map(
+  values = tidyr::expand_grid(
+    tax_metric  = c("species_richness", "exp_shannon",
+                    "inv_simpson", "pielou_evenness"),
+    spec_metric = c("CV", "SV", "log.CHV")
+  ),
+  names  = c(tax_metric, spec_metric),
+  unlist = FALSE,
+  tar_target(model,
+             fit_spectral_biodiversity_model(
+               spectral_taxonomic_diversity, tax_metric, spec_metric)),
+  tar_target(summary,
+             summarise_spectral_biodiversity_model(
+               model, tax_metric, spec_metric))
+)
+
+# Per-pair model + summary tar_map for CV band-combination models.
+# tar_map names: cv_model_<tax>_<bands>, cv_summary_<tax>_<bands>.
+cv_model_branches <- tar_map(
+  values = tidyr::expand_grid(
+    tax_metric = c("species_richness", "exp_shannon",
+                   "inv_simpson", "pielou_evenness"),
+    band_combo = names(BAND_SUBSETS)
+  ),
+  names  = c(tax_metric, band_combo),
+  unlist = FALSE,
+  tar_target(cv_model,
+             fit_cv_band_model(cv_values, tax_metric, band_combo)),
+  tar_target(cv_summary,
+             summarise_cv_band_model(cv_model, tax_metric, band_combo))
+)
+
+phase_4c_targets <- list(
+
+  # ---- combined pixel_values --------------------------------------------
+  # Bind the four per-site pixel_values into one tibble. spectral_metrics
+  # below consumes this in a single rarefaction call so the published RNG
+  # sequence is preserved.
+  tar_combine(pixel_values,
+              phase_4b_branches$pixel_values,
+              command = dplyr::bind_rows(!!!.x)),
+
+  # min_points: smallest non-NA pixel count across all (site, subplot)
+  # combinations — drives the rarefaction sample size. Previously hardcoded
+  # at 133609 in the script; derived from data here.
+  tar_target(min_points,
+             pixel_values %>%
+               na.omit() %>%
+               dplyr::count(site, subplot_id) %>%
+               dplyr::pull(n) %>%
+               min()),
+
+  # ---- spectral metrics (CV / SV / CHV_nopca / log.CHV) ------------------
+  # Single call to preserve the script's rarefaction RNG sequence. Adds
+  # log.CHV (for the manuscript scale) and the site-letter prefix so
+  # subplot_id is unique across sites.
+  tar_target(
+    spectral_metrics,
+    calculate_spectral_metrics(
+      pixel_values,
+      wavelengths = WAVELENGTHS,
+      min_points  = min_points,
+      n           = 999,
+      rarefaction = TRUE,
+      seed        = RAREFACTION_SEED
+    ) %>%
+      dplyr::mutate(log.CHV = log(CHV_nopca)) %>%
+      add_site_prefix()
+  ),
+
+  # ---- CV per band subset + combined cv_values ---------------------------
+  cv_branches,
+  tar_combine(cv_band_combos,
+              cv_branches$cv_subset,
+              command = dplyr::bind_rows(!!!.x) %>% add_site_prefix()),
+
+  # ---- spectral × taxonomic join ----------------------------------------
+  tar_target(spectral_taxonomic_diversity,
+             dplyr::left_join(spectral_metrics, taxonomic_diversity,
+                              by = c("site", "subplot_id"))),
+
+  # ---- cv_values: band-subset CVs + all-bands CV + taxonomic join -------
+  # Matches the script's `cv_values` structure (one row per site × subplot ×
+  # bands with taxonomic metrics joined). Used by the CV-band models below.
+  tar_target(
+    cv_values,
+    {
+      all_bands <- spectral_taxonomic_diversity %>%
+        dplyr::select(site, subplot_id, CV) %>%
+        dplyr::mutate(bands = "all_bands")
+
+      combined <- dplyr::bind_rows(all_bands, cv_band_combos)
+
+      spectral_taxonomic_diversity %>%
+        dplyr::select(species_richness, exp_shannon, inv_simpson,
+                      pielou_evenness, site, subplot_id) %>%
+        dplyr::left_join(combined, by = c("site", "subplot_id"))
+    }
+  ),
+
+  # ---- per-pair model fits + tar_combine'd summary tables ---------------
+  model_branches,
+  tar_combine(spectral_biodiversity_model_results,
+              model_branches$summary,
+              command = dplyr::bind_rows(!!!.x)),
+
+  cv_model_branches,
+  tar_combine(cv_biodiversity_model_results,
+              cv_model_branches$cv_summary,
+              command = dplyr::bind_rows(!!!.x))
+)
 
 
 # =============================================================================
@@ -273,6 +388,6 @@ phase_4b_targets <- list(
 
 # =============================================================================
 # Return value — `targets` reads the list at the bottom of _targets.R.
-# Right now this is Phase 4b only.
+# Currently Phases 4b + 4c.
 # =============================================================================
-phase_4b_targets
+list(phase_4b_targets, phase_4c_targets)

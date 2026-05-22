@@ -152,6 +152,20 @@ reporting (implemented in Phase 5):
 
 The rendered manuscript-figure report is implemented in Phase 5 (publication prep) as a `tar_render()` target within this pipeline.
 
+**Runtime capture.** As each sub-phase brings new targets online, `tar_meta(fields = "seconds")` records per-target wall-clock time automatically — no instrumentation needed. After Phase 4d, dump a snapshot to `data_out/target_runtimes.csv` (or read it live in the report). This feeds the runtime table in the Phase 5 README. Don't try to time components by hand before the pipeline exists; the numbers won't be comparable to what readers see when they run `tar_make()`.
+
+**Observed Phase 4c runtimes (first cold run, 2026-05-22).** Worth recording while the numbers are fresh, since they shape the "Why `targets`" argument in the Phase 5 README:
+- Per-site `pixel_values_<site>` extraction: 16–27 s each.
+- Combined `pixel_values` + `min_points`: ~12 s.
+- `cv_subset_red.edge_nir` (CV only, 2 bands): ~16 min.
+- `cv_subset_green_red.edge_nir` (CV only, 3 bands): ~17 min.
+- `spectral_metrics` (CV + SV + **5D CHV**, all bands, n=999): ≥50 min — the single dominant cost in Phase 4c, ~hour-long. The cv_subsets and `spectral_metrics` are not in the same cost regime: cv_subsets do CV only, while `spectral_metrics` adds the 5D convex hull, and `geometry::convhulln` cost grows roughly as O(n^(d/2)) with dimension. Comparing them as "how much extra do bands cost" is misleading; the dominant factor is the CHV dimensionality, not the band count.
+- Downstream of `spectral_metrics`: the `spectral_taxonomic_diversity` join, both `tar_combine`s, and the 24 glmmTMB/lm fits + summaries are all fast (seconds each on ~100-row data).
+
+**Why `spectral_metrics` can't be parallelised away.** It's tempting to look at this hour-long monolithic target and split it per site for parallelism. Don't. Design decision #2 in `_targets.R` fixes `RAREFACTION_SEED = 42` and pins `spectral_metrics` to a *single* call so the rarefaction RNG sequence is reproducible — splitting per site would change the published numbers. The cost is the price of bit-exact reproducibility, and it's the right tradeoff. This target is also the strongest motivating example for the "Why `targets`" section in the Phase 5 README: hour-long, deterministic given a seed, reused by every downstream model and figure — exactly what content-addressed caching is for.
+
+**When to start worrying.** If `spectral_metrics` crosses ~90 min on a future run, suspect a Qhull edge case in one site's 5D hull (degenerate point configurations cause `convhulln` to slow down dramatically). Drop into a `tar_workspace()` and bisect by site to find the offender. Below ~90 min, treat as expensive but expected.
+
 ## Working conventions during the transition
 
 - Don't add new top-level scripts with side effects. Logic goes in `funx.R` (or a future `R/` directory) as named functions.

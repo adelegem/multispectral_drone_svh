@@ -477,71 +477,144 @@ add_site_prefix <- function(data) {
 # MIXED-MODEL FITTING ---------------------------------------------------------
 
 # Fit one mixed model: <tax_metric> ~ scale(<spec_metric>) + (1 | site).
-# Returns a one-row tibble of coefficients, Wald CIs, p-value, significance flag,
-# Nakagawa R^2, convergence flag, and singular-fit flag. Returns NULL if
-# glmmTMB fails to fit. Replaces the nested-loop body in
-# continuous_metrics_analysis.R.
+# If the mixed fit is singular (site random-intercept variance ≈ 0, which
+# pielou_evenness consistently triggers across our four sites), automatically
+# refit as a fixed-effect lm without (1 | site). Returns the fitted model
+# (class glmmTMB or lm). Caller doesn't need to know which kind it got —
+# summarise_spectral_biodiversity_model() handles both.
 fit_spectral_biodiversity_model <- function(data, tax_metric, spec_metric) {
-  model_formula <- as.formula(
+  mixed_formula <- as.formula(
     paste(tax_metric, "~ scale(", spec_metric, ") + (1 | site)")
   )
-  model <- try(glmmTMB::glmmTMB(model_formula, data = data), silent = TRUE)
-  if (inherits(model, "try-error")) return(NULL)
+  mixed <- glmmTMB::glmmTMB(mixed_formula, data = data)
 
-  converged   <- tryCatch(model$sdr$pdHess, error = function(e) FALSE)
-  is_singular <- performance::check_singularity(model)
-  r2_values   <- performance::r2_nakagawa(model)
+  if (isTRUE(performance::check_singularity(mixed))) {
+    fixed_formula <- as.formula(paste(tax_metric, "~ scale(", spec_metric, ")"))
+    return(stats::lm(fixed_formula, data = data))
+  }
 
-  coefs <- summary(model)$coefficients$cond
+  mixed
+}
+
+# One-row summary tibble from a fitted spectral-biodiversity model. Accepts
+# either glmmTMB (mixed) or lm (singular-refit fallback). `model_kind`
+# records which was used; `is_singular` is TRUE only when the mixed fit was
+# singular and the refit kicked in.
+summarise_spectral_biodiversity_model <- function(model, tax_metric, spec_metric) {
   spec_term <- paste0("scale(", spec_metric, ")")
-  conf_int  <- confint(model, method = "Wald")
 
-  p_value <- coefs[spec_term, "Pr(>|z|)"]
+  if (inherits(model, "glmmTMB")) {
+    coefs     <- summary(model)$coefficients$cond
+    conf_int  <- confint(model, method = "Wald")
+    r2_values <- performance::r2_nakagawa(model)
+    p_value   <- coefs[spec_term, "Pr(>|z|)"]
 
-  tibble(
-    taxonomic_metric = tax_metric,
-    spectral_metric  = spec_metric,
-    r2_marginal      = unname(r2_values$R2_marginal),
-    r2_conditional   = unname(r2_values$R2_conditional),
-    beta             = coefs[spec_term, "Estimate"],
-    beta_ci_lower    = conf_int[spec_term, 1],
-    beta_ci_upper    = conf_int[spec_term, 2],
-    intercept        = coefs["(Intercept)", "Estimate"],
-    p_value          = p_value,
-    significance     = if_else(p_value < 0.05, "yes", "no"),
-    converged        = converged,
-    is_singular      = is_singular
-  )
+    tibble(
+      taxonomic_metric = tax_metric,
+      spectral_metric  = spec_metric,
+      model_kind       = "mixed",
+      r2_marginal      = unname(r2_values$R2_marginal),
+      r2_conditional   = unname(r2_values$R2_conditional),
+      beta             = coefs[spec_term, "Estimate"],
+      beta_ci_lower    = conf_int[spec_term, 1],
+      beta_ci_upper    = conf_int[spec_term, 2],
+      intercept        = coefs["(Intercept)", "Estimate"],
+      p_value          = p_value,
+      significance     = if_else(p_value < 0.05, "yes", "no"),
+      converged        = tryCatch(model$sdr$pdHess, error = function(e) FALSE),
+      is_singular      = FALSE
+    )
+  } else if (inherits(model, "lm")) {
+    coefs    <- summary(model)$coefficients
+    conf_int <- confint(model)
+    r2       <- summary(model)$r.squared
+    p_value  <- coefs[spec_term, "Pr(>|t|)"]
+
+    tibble(
+      taxonomic_metric = tax_metric,
+      spectral_metric  = spec_metric,
+      model_kind       = "fixed",
+      r2_marginal      = r2,
+      r2_conditional   = r2,                # no random effect; marginal == conditional
+      beta             = coefs[spec_term, "Estimate"],
+      beta_ci_lower    = conf_int[spec_term, 1],
+      beta_ci_upper    = conf_int[spec_term, 2],
+      intercept        = coefs["(Intercept)", "Estimate"],
+      p_value          = p_value,
+      significance     = if_else(p_value < 0.05, "yes", "no"),
+      converged        = TRUE,
+      is_singular      = TRUE               # marks "mixed was singular → refit"
+    )
+  } else {
+    stop("Unexpected model class: ", paste(class(model), collapse = ", "))
+  }
 }
 
 # Fit one CV-vs-taxonomic model on the band-combination subset of cv_values:
 # <tax_metric> ~ scale(CV) + (1 | site), restricted to rows where bands == band_combo.
-# Returns a one-row tibble; NULL on fit failure.
+# Same singular-refit fallback as fit_spectral_biodiversity_model().
 fit_cv_band_model <- function(data, tax_metric, band_combo) {
-  df_filtered <- data %>% filter(bands == band_combo)
-  model_formula <- as.formula(paste0(tax_metric, " ~ scale(CV) + (1 | site)"))
-  model <- try(glmmTMB::glmmTMB(model_formula, data = df_filtered), silent = TRUE)
-  if (inherits(model, "try-error")) return(NULL)
+  df_filtered   <- data %>% filter(bands == band_combo)
+  mixed_formula <- as.formula(paste0(tax_metric, " ~ scale(CV) + (1 | site)"))
+  mixed <- glmmTMB::glmmTMB(mixed_formula, data = df_filtered)
 
-  r2_values <- performance::r2_nakagawa(model)
-  coefs     <- summary(model)$coefficients$cond
-  conf_int  <- confint(model, method = "Wald")
+  if (isTRUE(performance::check_singularity(mixed))) {
+    fixed_formula <- as.formula(paste0(tax_metric, " ~ scale(CV)"))
+    return(stats::lm(fixed_formula, data = df_filtered))
+  }
+
+  mixed
+}
+
+# One-row summary tibble from a fitted CV-band model. Same handling as
+# summarise_spectral_biodiversity_model() but with the cv-band column naming
+# (bands, beta_spec, p_spec, sig_spec) the manuscript figure uses.
+summarise_cv_band_model <- function(model, tax_metric, band_combo) {
   spec_term <- "scale(CV)"
-  p_spec    <- coefs[spec_term, "Pr(>|z|)"]
 
-  tibble(
-    bands              = band_combo,
-    taxonomic_metric   = tax_metric,
-    spectral_metric    = "CV",
-    r2_marginal        = unname(r2_values$R2_marginal),
-    r2_conditional     = unname(r2_values$R2_conditional),
-    beta_spec          = coefs[spec_term, "Estimate"],
-    beta_spec_ci_lower = conf_int[spec_term, 1],
-    beta_spec_ci_upper = conf_int[spec_term, 2],
-    p_spec             = p_spec,
-    sig_spec           = if_else(p_spec < 0.05, "yes", "no"),
-    intercept          = coefs["(Intercept)", "Estimate"]
-  )
+  if (inherits(model, "glmmTMB")) {
+    coefs     <- summary(model)$coefficients$cond
+    conf_int  <- confint(model, method = "Wald")
+    r2_values <- performance::r2_nakagawa(model)
+    p_spec    <- coefs[spec_term, "Pr(>|z|)"]
+
+    tibble(
+      bands              = band_combo,
+      taxonomic_metric   = tax_metric,
+      spectral_metric    = "CV",
+      model_kind         = "mixed",
+      r2_marginal        = unname(r2_values$R2_marginal),
+      r2_conditional     = unname(r2_values$R2_conditional),
+      beta_spec          = coefs[spec_term, "Estimate"],
+      beta_spec_ci_lower = conf_int[spec_term, 1],
+      beta_spec_ci_upper = conf_int[spec_term, 2],
+      p_spec             = p_spec,
+      sig_spec           = if_else(p_spec < 0.05, "yes", "no"),
+      intercept          = coefs["(Intercept)", "Estimate"]
+    )
+  } else if (inherits(model, "lm")) {
+    coefs    <- summary(model)$coefficients
+    conf_int <- confint(model)
+    r2       <- summary(model)$r.squared
+    p_spec   <- coefs[spec_term, "Pr(>|t|)"]
+
+    tibble(
+      bands              = band_combo,
+      taxonomic_metric   = tax_metric,
+      spectral_metric    = "CV",
+      model_kind         = "fixed",
+      r2_marginal        = r2,
+      r2_conditional     = r2,
+      beta_spec          = coefs[spec_term, "Estimate"],
+      beta_spec_ci_lower = conf_int[spec_term, 1],
+      beta_spec_ci_upper = conf_int[spec_term, 2],
+      p_spec             = p_spec,
+      sig_spec           = if_else(p_spec < 0.05, "yes", "no"),
+      intercept          = coefs["(Intercept)", "Estimate"]
+    )
+  } else {
+    stop("Unexpected model class: ", paste(class(model), collapse = ", "))
+  }
 }
 
 
