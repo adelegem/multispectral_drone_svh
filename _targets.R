@@ -293,8 +293,9 @@ phase_4c_targets <- list(
 
   # ---- spectral metrics (CV / SV / CHV_nopca / log.CHV) ------------------
   # Single call to preserve the script's rarefaction RNG sequence. Adds
-  # log.CHV (for the manuscript scale) and the site-letter prefix so
-  # subplot_id is unique across sites.
+  # log.CHV for the manuscript scale. subplot_id stays unprefixed until
+  # after the taxonomic join — taxonomic_diversity uses unprefixed
+  # subplot_id, and prefixing here would break the join.
   tar_target(
     spectral_metrics,
     calculate_spectral_metrics(
@@ -305,20 +306,24 @@ phase_4c_targets <- list(
       rarefaction = TRUE,
       seed        = RAREFACTION_SEED
     ) %>%
-      dplyr::mutate(log.CHV = log(CHV_nopca)) %>%
-      add_site_prefix()
+      dplyr::mutate(log.CHV = log(CHV_nopca))
   ),
 
   # ---- CV per band subset + combined cv_values ---------------------------
+  # cv_band_combos gets prefixed here (no further taxonomic join precedes
+  # the rbind into cv_values below).
   cv_branches,
   tar_combine(cv_band_combos,
               cv_branches$cv_subset,
               command = dplyr::bind_rows(!!!.x) %>% add_site_prefix()),
 
   # ---- spectral × taxonomic join ----------------------------------------
+  # Join unprefixed, then prefix the result — matches the legacy script
+  # (continuous_metrics_analysis.R lines 59–62).
   tar_target(spectral_taxonomic_diversity,
              dplyr::left_join(spectral_metrics, taxonomic_diversity,
-                              by = c("site", "subplot_id"))),
+                              by = c("site", "subplot_id")) %>%
+               add_site_prefix()),
 
   # ---- cv_values: band-subset CVs + all-bands CV + taxonomic join -------
   # Matches the script's `cv_values` structure (one row per site × subplot ×
