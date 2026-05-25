@@ -151,7 +151,7 @@ flowchart TD
   m2 --> fig6[Figure 6<br/>CV across band combinations]:::fig
 ```
 
-The dashed block is upstream of this repo: the rasters arrive pre-masked from Zenodo. `tar_make()` covers everything below the dashed block.
+The dashed block is upstream of this repo: the rasters arrive pre-masked from Zenodo, so `tar_make()` covers only the steps below the dashed block. The scripts that produced the Zenodo-archived rasters live in [`preprocessing/`](preprocessing/) for transparency — they're **not** invoked by `tar_make()` and aren't needed to reproduce the analysis. See `preprocessing/README.md` for what they do and what inputs they need.
 
 For the full live DAG (84 targets including the per-site and per-pair fan-out), run `targets::tar_visnetwork()` after `tar_make()`. For a static export to embed elsewhere, `targets::tar_mermaid()`.
 
