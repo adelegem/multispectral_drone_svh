@@ -1,5 +1,7 @@
 # multispectral_drone_svh
 
+[![Tier 1 tests](https://github.com/adelegem/multispectral_drone_svh/actions/workflows/tests.yml/badge.svg)](https://github.com/adelegem/multispectral_drone_svh/actions/workflows/tests.yml)
+
 Code supporting Gemmell et al., *"Applying the spectral variability hypothesis to arid shrublands, using multispectral drone imagery."*
 
 The analysis tests whether spectral heterogeneity from drone-borne multispectral imagery (5 bands: blue, green, red, red-edge, NIR) predicts taxonomic plant diversity across four AusPlot sites in arid NSW (NSABHC0009–0012), each surveyed as a 5×5 grid of 20 m subplots.
@@ -98,7 +100,7 @@ Rscript -e 'testthat::test_dir("tests")'                  # Tier 1, ~10 s, every
 RUN_TIER2=true Rscript -e 'testthat::test_dir("tests")'   # Tier 2, ~minutes, needs rasters
 ```
 
-Tier 1 snapshots the taxonomic-diversity output against `tests/fixtures/taxonomic_diversity_baseline.rds`. Tier 2 additionally exercises pixel extraction and spectral metrics on the smallest raster (NSABHC0010, 554 MB). A continuous-integration job runs Tier 1 on every push (see `.github/workflows/`, forthcoming).
+Tier 1 snapshots the taxonomic-diversity output against `tests/fixtures/taxonomic_diversity_baseline.rds`. Tier 2 additionally exercises pixel extraction and spectral metrics on the smallest raster (NSABHC0010, 554 MB). A GitHub Actions workflow ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)) runs Tier 1 on every push to `main` and on pull requests against `main`, exercising the locked `renv` environment on `ubuntu-latest`.
 
 ---
 

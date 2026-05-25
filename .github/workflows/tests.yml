@@ -1,0 +1,39 @@
+name: Tier 1 tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      R_KEEP_PKG_SOURCE: yes
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # System libraries that sf / terra / units link against. Must come
+      # before setup-renv, since renv::restore() will try to install those
+      # R packages and will fail without the underlying C libs.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgdal-dev libproj-dev libgeos-dev libudunits2-dev
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.3'
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-renv@v2
+
+      # Tier 1 only — taxonomic-diversity snapshot, no rasters.
+      # Tier 2 (4.6 GB rasters) is deliberately not run here; see CLAUDE.md.
+      - name: Run Tier 1 tests
+        run: Rscript -e 'testthat::test_dir("tests")'
