@@ -1,0 +1,170 @@
+---
+title: "multispectral_drone_svh — results report"
+subtitle: "Gemmell et al., *Applying the spectral variability hypothesis to arid shrublands*"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+    fig_width: 9
+    fig_height: 6
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo    = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  comment = "#>"
+)
+
+# tar_render() in _targets.R sets knit_root_dir = ".." so this Rmd executes
+# with the project root as its working directory. That way targets' default
+# store (_targets/) resolves correctly and funx.R is sourceable directly.
+source("funx.R")
+
+library(targets)
+library(tidyverse)
+library(knitr)
+library(glmmTMB)   # predict.glmmTMB dispatch on cached _mixed fits
+library(ggnewscale)
+library(ggh4x)
+```
+
+# Overview
+
+This report is the canonical results document for the analysis pipeline driven by [`_targets.R`](../_targets.R). It loads every figure and table from cached targets via `tar_read()`, so it will rebuild only when an upstream target changes — re-running it requires only a working `_targets/` cache (i.e. after `targets::tar_make()` has succeeded at least once).
+
+For background, see the [top-level README](../README.md). For the workflow as code (84 targets, the live DAG), `targets::tar_visnetwork()`.
+
+# Workflow
+
+```{r fig-workflow, fig.width = 9, fig.height = 6, fig.cap = "Figure 1. Analysis workflow from preprocessing through to manuscript figures. The preprocessing block (above the dashed line in the README version of this diagram) is upstream of the targets pipeline and produces the Zenodo-archived rasters; see `preprocessing/` for those scripts."}
+make_figure_workflow(version = "manuscript")
+```
+
+# Figure 5 — spectral vs taxonomic diversity
+
+Per-subplot scatter plots of taxonomic diversity (species richness *S*, exp(*H*'), 1/*D*, Pielou *J*') against each of the three continuous spectral metrics (coefficient of variation *CV*, spectral variance *SV*, log convex-hull volume *log CHV*), with significant-relationship overlay lines drawn from the cached `glmmTMB` / `lm` fits.
+
+```{r fig-5, fig.width = 9, fig.height = 8, fig.cap = "Figure 5. Spectral vs taxonomic diversity across the four arid-NSW sites."}
+metrics       <- tar_read(spectral_taxonomic_diversity)
+model_results <- tar_read(spectral_biodiversity_model_results)
+
+# Load the 12 per-pair model fits. Listed explicitly so tar_render()'s static
+# dependency analysis catches each one; otherwise upstream changes wouldn't
+# invalidate the report.
+fits <- list(
+  species_richness_CV       = tar_read(model_species_richness_CV),
+  species_richness_SV       = tar_read(model_species_richness_SV),
+  species_richness_log.CHV  = tar_read(model_species_richness_log.CHV),
+  exp_shannon_CV            = tar_read(model_exp_shannon_CV),
+  exp_shannon_SV            = tar_read(model_exp_shannon_SV),
+  exp_shannon_log.CHV       = tar_read(model_exp_shannon_log.CHV),
+  inv_simpson_CV            = tar_read(model_inv_simpson_CV),
+  inv_simpson_SV            = tar_read(model_inv_simpson_SV),
+  inv_simpson_log.CHV       = tar_read(model_inv_simpson_log.CHV),
+  pielou_evenness_CV        = tar_read(model_pielou_evenness_CV),
+  pielou_evenness_SV        = tar_read(model_pielou_evenness_SV),
+  pielou_evenness_log.CHV   = tar_read(model_pielou_evenness_log.CHV)
+)
+
+make_figure_5(metrics, model_results, fits)
+```
+
+# Figure 6 — CV across band combinations
+
+Beta coefficients (with 95% CI) for CV computed over three reduced band subsets vs the four taxonomic diversity metrics.
+
+```{r fig-6, fig.width = 10, fig.height = 4, fig.cap = "Figure 6. CV beta coefficients across band combinations."}
+make_figure_6(
+  tar_read(spectral_biodiversity_model_results),
+  tar_read(cv_biodiversity_model_results)
+)
+```
+
+# Model summary tables
+
+## Continuous spectral metrics × taxonomic diversity
+
+Mixed models (`glmmTMB`, site as random intercept) for each of the 12 taxonomic × spectral pairs. The three `pielou_evenness` rows are refit as fixed-effect linear models because the mixed specification is singular (site σ ≈ 0); they're tagged `model_kind = "fixed"`.
+
+```{r table-continuous}
+tar_read(spectral_biodiversity_model_results) |>
+  dplyr::transmute(
+    `taxonomic`        = taxonomic_metric,
+    `spectral`         = spectral_metric,
+    `kind`             = model_kind,
+    `β`                = round(beta,            3),
+    `95% CI lower`     = round(beta_ci_lower,   3),
+    `95% CI upper`     = round(beta_ci_upper,   3),
+    `p`                = signif(p_value,        3),
+    `R² marginal`      = round(r2_marginal,     3),
+    `R² conditional`   = round(r2_conditional,  3)
+  ) |>
+  knitr::kable()
+```
+
+## CV across band subsets × taxonomic diversity
+
+```{r table-cv}
+tar_read(cv_biodiversity_model_results) |>
+  dplyr::transmute(
+    `taxonomic`        = taxonomic_metric,
+    `band subset`      = bands,
+    `kind`             = model_kind,
+    `β`                = round(beta_spec,           3),
+    `95% CI lower`     = round(beta_spec_ci_lower,  3),
+    `95% CI upper`     = round(beta_spec_ci_upper,  3),
+    `p`                = signif(p_spec,             3),
+    `R² marginal`      = round(r2_marginal,         3),
+    `R² conditional`   = round(r2_conditional,      3)
+  ) |>
+  knitr::kable()
+```
+
+## Spectral species × taxonomic diversity
+
+Means of spectral-species metrics (richness, Shannon, Simpson) across 20 RF + k-means seeds vs the matched taxonomic metrics.
+
+```{r table-ss}
+tar_read(spectral_species_model_results) |>
+  dplyr::transmute(
+    `taxonomic`        = taxonomic_metric,
+    `spectral`         = spectral_metric,
+    `kind`             = model_kind,
+    `β`                = round(beta,            3),
+    `95% CI lower`     = round(beta_ci_lower,   3),
+    `95% CI upper`     = round(beta_ci_upper,   3),
+    `p`                = signif(p_value,        3),
+    `R² marginal`      = round(r2_marginal,     3),
+    `R² conditional`   = round(r2_conditional,  3)
+  ) |>
+  knitr::kable()
+```
+
+# Pipeline runtime
+
+Wall-clock time per target, from the most recent `tar_make()` run. Top 10 most expensive targets shown — the full set is in `targets::tar_meta(fields = "seconds")`.
+
+```{r runtime}
+m <- targets::tar_meta(fields = c("name", "type", "seconds"))
+m <- dplyr::filter(m, !is.na(seconds), type %in% c("stem", "branch"))
+total_h <- sum(m$seconds, na.rm = TRUE) / 3600
+
+cat(sprintf("Total pipeline wall-clock: %.1f h across %d targets.\n",
+            total_h, nrow(m)))
+
+m |>
+  dplyr::arrange(dplyr::desc(seconds)) |>
+  head(10) |>
+  dplyr::transmute(target = name, `runtime (min)` = round(seconds / 60, 1)) |>
+  knitr::kable()
+```
+
+# Session info
+
+```{r sessioninfo}
+sessionInfo()
+```

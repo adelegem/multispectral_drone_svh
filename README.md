@@ -65,6 +65,10 @@ This single command:
 
 ### 3. Inspect results
 
+`tar_make()` also rebuilds `reports/report.html` — a self-contained results document that loads everything via `tar_read()` and renders the workflow figure, Figures 5 and 6, model summary tables, and per-target runtime. **Start there** if you just want to see what the pipeline produced; open it in any browser.
+
+For programmatic access from R:
+
 ```r
 library(targets)
 tar_load(spectral_biodiversity_model_results)   # 12 continuous-metric models

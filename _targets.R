@@ -463,20 +463,22 @@ phase_4d_targets <- list(
 
 
 # =============================================================================
-# PHASE 5 — figures + manuscript report  (STUB)
+# PHASE 5 — manuscript report rendered via tar_render
 # =============================================================================
 #
-# Likely inlined into report.Rmd rather than standalone targets (see decision
-# #4). report.Rmd uses tar_read() to pull spectral_taxonomic_diversity,
-# model_results, cv_band_results, model_fits (a list of the per-tax × per-spec
-# fitted objects, for Figure 5's predicted lines), mean_spectral_species, and
-# ss_models. Reformatted into the manuscript's Tables 1–2 and Figures 5–6.
-#
-#   report                       tar_render("report.Rmd")
+# reports/report.Rmd pulls everything it needs via tar_read(), so any upstream
+# target the report references will invalidate the rendered HTML. The Rmd
+# lives in reports/ and renders to reports/report.html; both files are tracked.
+# tarchetypes::tar_render() scans the Rmd for tar_read() / tar_load() calls
+# and wires them up as dependencies automatically.
+phase_5_targets <- list(
+  # knit_root_dir = ".." → Rmd runs with the project root as cwd, so
+  # `source("funx.R")` and the default targets store resolve naturally.
+  tar_render(report, "reports/report.Rmd", knit_root_dir = "..")
+)
 
 
 # =============================================================================
 # Return value — `targets` reads the list at the bottom of _targets.R.
-# Currently Phases 4b + 4c + 4d.
 # =============================================================================
-list(phase_4b_targets, phase_4c_targets, phase_4d_targets)
+list(phase_4b_targets, phase_4c_targets, phase_4d_targets, phase_5_targets)
