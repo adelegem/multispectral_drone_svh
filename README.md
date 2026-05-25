@@ -118,7 +118,13 @@ You don't have to run the full 44 h cold-run to verify the published numbers. Fr
   Rscript -e 'targets::tar_make()'
   ```
 
-  `tar_make()` rebuilds only the four per-site pixel-extraction targets (~2 min compute, ~10–15 min wall-clock once R startup + 4 GB transient memory pressure is accounted for) and re-uses every downstream cached value — `spectral_metrics`, all 20 spectral-species seeds, every model fit, the rendered report. The pixel rebuild's content hash is checked against the cached value: if it matches (it will, given the locked R environment + matching Zenodo rasters), downstream stays cached; if it doesn't, you get an explicit invalidation cascade rather than silently mismatched results — implicit determinism check. Locally verified end-to-end before release.
+  The tarball includes the `_targets/` metadata and every cached object *except* the four raw pixel matrices (`pixel_values_NSABHC0009` … `0012`, ~3.6 GB combined — too large to distribute). When you run `tar_make()`, here's what happens:
+
+  1. **Pixel extraction rebuilds (~2 min compute, ~10–15 min wall-clock).** `targets` sees that the four `pixel_values_*` objects are missing from the cache, so it re-extracts them from the Zenodo rasters. This is the only step that actually runs.
+  2. **Everything else stays cached.** `targets` hashes each rebuilt pixel matrix and compares it to the hash recorded in the cache metadata. If the hashes match — and they will, given the locked R environment and identical Zenodo rasters — then all 80 downstream targets (`spectral_metrics`, the 20 spectral-species seeds, every model fit, and the rendered report) are already up to date and are skipped.
+  3. **Built-in verification.** If something *were* different (a different R version, a modified raster), the pixel hashes wouldn't match, and `targets` would automatically invalidate and rebuild everything downstream rather than silently using mismatched results.
+
+  Locally verified end-to-end before release.
 
 - **Just the model results** — same release attaches the model-result RDS files (`spectral_biodiversity_model_results.rds`, etc.) directly. Download them and compare with `digest::digest()` against the digests listed in *Verifying your reproduction* below.
 
