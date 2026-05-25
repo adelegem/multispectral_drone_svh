@@ -6,18 +6,20 @@ The analysis tests whether spectral heterogeneity from drone-borne multispectral
 
 ## Repo layout
 
-- `continuous_metrics_analysis.R` — extracts pixel values per subplot, computes coefficient of variation (CV), spectral variance (SV), and convex hull volume (CHV) using rarefaction (n=999); fits per-taxonomic-metric × per-spectral-metric mixed models (`glmmTMB`, site as random effect). Also computes CV across band subsets (red-edge+NIR, etc.).
-- `spectral_species_analysis.R` — random-forest + k-means clustering of pixels into "spectral species" (k=40), repeated over 20 seeds; computes spectral richness / Shannon / Simpson per subplot; fits mixed models against field diversity.
-- `figures-for-publication.R` — reads `data_out/` outputs from `continuous_metrics_analysis.R` and produces the two manuscript figures: Figure 5 (`masked_24_plot.png`, spectral vs taxonomic scatter with significant-relationship overlays) and Figure 6 (`cv_band_combinations_plot.png`, CV beta coefficients across band combinations). Re-fits the 12 mixed models inline to get predicted lines for the overlays — redundant with `data_out/model_fits/`; the targets refactor (Phase 4) should reuse the cached fits via `predict()`.
+- `_targets.R` — **canonical pipeline driver** (Phase 4). `Rscript -e 'targets::tar_make()'` runs the whole analysis. See "Phase 4 notes" below for design context.
+- `continuous_metrics_analysis.R` — **legacy driver**, retained as a fallback during the Phase 4 transition. Computes CV, SV, 5D CHV using rarefaction (n=999); fits per-taxonomic-metric × per-spectral-metric mixed models. Its model-fitting logic now lives in `funx.R::fit_spectral_biodiversity_model()` and is called from `_targets.R`. Plan to retire after Phase 5.3 lands `report.Rmd`.
+- `spectral_species_analysis.R` — **legacy driver**, same status. Per-seed RF + k-means clustering logic is now in `funx.R::spectral_species_one_seed()` and called from `_targets.R` via a `tar_map` over 20 seeds.
+- `figures-for-publication.R` — **legacy figure generator**, not yet migrated. Reads `data_out/` outputs and produces Figure 5 (`masked_24_plot.png`) and Figure 6 (`cv_band_combinations_plot.png`). Re-fits the 12 mixed models inline (redundant with the cached fits in the targets DAG). Phase 5.3 (`report.Rmd`) should absorb these as `tar_render()` chunks reusing cached fits via `predict()`.
 - `funx.R` — analysis-specific helpers and saltbush-delegating wrappers. The three "main" reusable functions (`calculate_field_diversity`, `extract_pixel_values`, `calculate_spectral_metrics`) are now thin wrappers around `saltbush::` equivalents — the wrappers handle AusPlots-specific subplot binning and the project's `subplot_id` / `CHV_nopca` column conventions. What's still genuinely local: `calculate_coefficient_of_variance` (band-subset CV; no saltbush equivalent), `calculate_cv` (called only by that), `bin_survey_subplots` (transect → 5×5 grid), `download_zenodo_rasters` (Zenodo fetcher), and the preprocessing-only helpers `create_masked_raster` / `find_optimum_thresholds`.
 - `data/ausplots_march_24.csv` — field survey hits.
 - `data/fishnets/NSABHC00{09..12}_fishnet.shp` — the 5×5 subplot grids per site.
 - `data/raster_images/` — gitignored; populated on first run by `download_zenodo_rasters()` from Zenodo 10.5281/zenodo.17089161 (~4.4 GB, 4 files: 0009 1.5 GB, 0010 554 MB, 0011 957 MB, 0012 1.5 GB).
-- `data_out/` — gitignored; intermediate outputs from the analysis scripts:
-  - `spectral_taxonomic_diversity.rds`, `cv_values.rds` — extracted pixel-derived metrics joined to taxonomic diversity.
-  - `spectral_biodiversity_model_results.rds`, `cv_biodiversity_model_results.rds` — original 12-model and CV-band-combo loop output, written directly by `continuous_metrics_analysis.R`.
-  - `model_checks/` — diagnostic per-model `.rds` (mixed-effect specification only) plus `model_checks.log`. Use these to inspect random-effect variances before deciding whether a refit is warranted.
-  - `model_fits/` — final fits used for reporting. One `.rds` per taxonomic × spectral metric, suffixed `_mixed` or `_fixed` depending on whether the singular-fit refit (see Conventions) kicked in, plus `model_summaries.csv` and `top_significant_models.csv`.
+- `_targets/` — gitignored; the canonical pipeline cache (Phase 4). Content-addressed; reproduced exactly from the lockfile on a fresh checkout via `tar_make()`. Inspect via `targets::tar_load(<name>)` / `targets::tar_meta()`.
+- `data_out/` — gitignored; **legacy outputs** from the top-level analysis scripts. Will become redundant once Phase 5.3 (`report.Rmd`) replaces `figures-for-publication.R` as the figure source and the legacy scripts are retired.
+  - `spectral_taxonomic_diversity.rds`, `cv_values.rds` — extracted pixel-derived metrics joined to taxonomic diversity. Equivalent of `tar_read(spectral_taxonomic_diversity)`.
+  - `spectral_biodiversity_model_results.rds`, `cv_biodiversity_model_results.rds` — 12-model and CV-band-combo loop output. Equivalent of the eponymous `tar_read()` targets.
+  - `model_checks/` — diagnostic per-model `.rds` (mixed-effect specification only). Use these to inspect random-effect variances before deciding whether a refit is warranted. No targets equivalent yet — produced only by the legacy script.
+  - `model_fits/` — final fits one `.rds` per taxonomic × spectral metric, suffixed `_mixed` or `_fixed` depending on whether the singular-fit refit kicked in, plus `model_summaries.csv` and `top_significant_models.csv`. Now superseded by the `model_<tax>_<spec>` and `summary_<tax>_<spec>` targets.
 - `reports/` — tracked: `interim_progress.Rmd` + its rendered `.html`, plus `main_results_summary.txt`. The directory itself is **not** in `.gitignore` (only `*.log` is); only transient figure drafts (`workflow_*.png`, `workflow_*.mmd`) are intentionally untracked. Read `interim_progress.Rmd` for the current running state of the analysis. To be revisited in Phase 5.8 once `report.Rmd` (Phase 5.3) decides the fate of the interim report.
 - `maps_graphs/` — gitignored; output directory for `figures-for-publication.R` (`masked_24_plot.png`, `cv_band_combinations_plot.png`).
 
@@ -30,8 +32,8 @@ The canonical pinned dependency set lives in `renv.lock` (committed in Phase 5.1
 - Per-subplot IDs are `"row_col"` (e.g. `"3_2"`); after joining across sites the analysis prefixes them with a site letter (`E`/`G`/`S`/`C`) to keep them unique.
 - Bands must be stacked in wavelength order (blue, green, red, red-edge, NIR) — several functions assume this implicitly.
 - Site names are the AusPlot IDs (`NSABHC0009`..`0012`) and are extracted from filenames via `str_extract(basename(x), "^[^_]+")`.
-- **Rarefaction seed:** `RAREFACTION_SEED <- 42` at the top of `continuous_metrics_analysis.R` is threaded into `calculate_spectral_metrics()` and `calculate_coefficient_of_variance()` so CV/CHV are bit-exact reproducible across runs. The spectral-species analysis loops over seeds 1–20 internally and does not need a single global seed.
-- **Singular-fit refit:** the three `pielou_evenness` mixed models (CV, SV, log.CHV) consistently produce site random-intercept std.dev ≈ 1e-6 (`performance::check_singularity() == TRUE`). The convention is to refit those models as fixed-effect linear models (no `(1 | site)`) and persist them under `data_out/model_fits/` with the suffix `_fixed`. The original mixed-model diagnostic fits stay at `data_out/model_checks/` for comparison. The refit logic is currently ad-hoc and needs to be folded back into `continuous_metrics_analysis.R` — until then, the script's own `*_model_results.rds` outputs contain `NA` for the singular fits' conditional R² and the post-hoc CSVs in `model_fits/` are the canonical results.
+- **Rarefaction seed:** `RAREFACTION_SEED <- 42` is set at the top of **both** `_targets.R` and the legacy `continuous_metrics_analysis.R`, threaded into `calculate_spectral_metrics()` and `calculate_coefficient_of_variance()` so CV/CHV are bit-exact reproducible across runs. The spectral-species analysis loops over seeds 1–20 internally and does not need a single global seed.
+- **Singular-fit refit:** the three `pielou_evenness` mixed models (CV, SV, log.CHV) consistently produce site random-intercept std.dev ≈ 1e-6 (`performance::check_singularity() == TRUE`). The convention is to refit those models as fixed-effect linear models (no `(1 | site)`). This logic now lives in `funx.R::fit_spectral_biodiversity_model()` (auto-detects singularity and returns an `lm` instead of a `glmmTMB` fit); the model-results tables tag the row with `model_kind = "fixed"` vs `"mixed"`. In the legacy script's `data_out/` outputs the same models are persisted with suffix `_fixed` next to their `_mixed` diagnostic counterparts.
 
 ## Current analysis state
 
@@ -82,27 +84,20 @@ A refactor changing outputs isn't automatically wrong — `saltbush::calculate_s
 
 ---
 
-# Plan: refactor to a {targets} pipeline (Phase 4)
+# Phase 4 notes: the `{targets}` pipeline as built
 
-Replace the two top-level scripts with a `targets` workflow so expensive steps (n=999 rarefaction, 20-seed RF clustering) are cached and only re-run when inputs change.
+Phase 4 (commits `f0fecd1` → `e0bdc60`) replaced the two top-level scripts with a `targets` workflow so expensive steps (n=999 rarefaction, 20-seed RF clustering) are cached and only re-run when inputs change. The legacy scripts are retained as fallbacks until Phase 5.3 lands `report.Rmd`. What follows is design rationale and operational notes for maintenance — not a forward plan.
 
-## Why targets fits
+## Why we adopted targets
 
 - **Expensive, deterministic steps.** Rarefaction in `calculate_cv`/`calculate_chv_nopca` and the 20-seed clustering both take a long time and produce reproducible outputs given a seed — exactly what `targets` caches well.
 - **Branching is natural.** The analysis is a cross-product over `site × taxonomic_metric × spectral_metric` (and `× band_combination`, `× seed`). `tar_map()` and `tar_map_rep()` express this directly.
 - **Large file inputs.** `tar_target(format = "file")` on the Zenodo download lets `targets` skip re-downloading if files are unchanged.
 - **Two scripts share inputs.** `funx.R::calculate_field_diversity` is called from both; in a pipeline it's computed once.
 
-## Prep work (before any `_targets.R` is written)
+## Phase 4a refactors (done)
 
-The existing functions in `funx.R` are mostly pure and reusable. The two analysis scripts mix computation with side effects — that needs untangling first. None of these should change behavior; they're pure refactors:
-
-1. **Extract the model-fitting loops** in `continuous_metrics_analysis.R` (lines ~72–127 and ~176–229) into functions: `fit_spectral_biodiversity_model(data, tax_metric, spec_metric)` and `fit_cv_band_model(data, tax_metric, band_combo)`, each returning a one-row tibble of coefficients / CIs / R². The driver code then becomes a `purrr::pmap_dfr` (and eventually a `tar_map`).
-2. **Remove the CSV write side effect** from `get_spectral_species()` in `spectral_species_analysis.R` (the `write.csv` inside the per-seed loop). Return the tibble; let `targets` handle persistence.
-3. **Make spectral-species per-seed callable.** Split `get_spectral_species()` into `spectral_species_one_seed(rasters, fishnets, seed, k, sample_size)` returning one tibble. The 20-seed iteration becomes a `tar_map_rep(seeds = 1:20)`.
-4. **Move every shared function into `funx.R`.** Both scripts should `source('funx.R')` (already done in both as of the Zenodo download work).
-5. **Consolidate the site-prefix logic** (`E`/`G`/`S`/`C`) into a small helper so it's not duplicated.
-6. **Extract figure generation** from `figures-for-publication.R` into `make_figure_5(metrics, model_results, fits)` and `make_figure_6(model_results, cv_band_results)`, each returning a ggplot object (no `ggsave`, no `dir.create` — `targets` handles persistence via `format = "file"` or `tarchetypes::tar_render`). Two adjacent cleanups while doing this: (a) drop the inline 12-model re-fit in Figure 5 and use cached fits from `data_out/model_fits/` via `predict()`, and (b) decide whether the figures live as their own `tar_target`s or get inlined into the Phase 5 `report.Rmd` (probably the latter, since the figures and the manuscript narrative will move together).
+For history: Phase 4a extracted pure functions out of the side-effectful analysis scripts before any `_targets.R` existed. Concretely: model-fitting loops became `fit_spectral_biodiversity_model()` and `fit_cv_band_model()`; the per-seed RF clustering became `spectral_species_one_seed()`; the `write.csv` side effect in the seed loop was removed; the site-prefix logic (`E`/`G`/`S`/`C`) was consolidated into `add_site_prefix()`. The figure helpers (item 6 in the original plan: `make_figure_5`, `make_figure_6`) were **not** extracted — they're still in `figures-for-publication.R` pending Phase 5.3.
 
 ## Target graph
 
@@ -112,16 +107,11 @@ The live DAG (84 targets after Phase 4d) is best inspected with:
 - `targets::tar_mermaid()` — Mermaid string suitable for embedding.
 - A hand-simplified Mermaid version (collapsing per-site and per-pair fan-out into single annotated boxes) lives in the README's *Workflow* section — that's the canonical "what readers see" diagram.
 
-## Sub-phases
+## Sub-phases (as built)
 
-1. **Phase 4a — prep refactors** (no targets yet). Items 1–5 above. Verify both scripts still produce identical outputs.
-2. **Phase 4b — minimal pipeline.** `_targets.R` with the file inputs, taxonomic diversity, and per-site pixel extraction. Confirms the plumbing works end-to-end on the cheap stuff.
-3. **Phase 4c — spectral metrics + continuous-metrics models.** Add CV/SV/CHV targets and the `tar_map` over taxonomic × spectral metrics.
-4. **Phase 4d — spectral species.** Add the 20-seed branching; consider `crew`/`future` for parallel execution.
+4a → 4d landed in order: 4a (function extraction; no `_targets.R` yet), 4b (minimal pipeline with file inputs + taxonomic diversity + per-site pixel extraction), 4c (CV/SV/5D-CHV + 12 continuous-metric models), 4d (20-seed spectral-species `tar_map` + 3 spectral-species models). Each sub-phase ended with `tar_make()` re-running cleanly and `testthat::test_dir("tests")` passing. The rendered manuscript-figure report is implemented in Phase 5.3 as a `tar_render()` target within this pipeline.
 
-The rendered manuscript-figure report is implemented in Phase 5 (publication prep) as a `tar_render()` target within this pipeline.
-
-**Runtime capture.** As each sub-phase brings new targets online, `tar_meta(fields = "seconds")` records per-target wall-clock time automatically — no instrumentation needed. After Phase 4d, dump a snapshot to `data_out/target_runtimes.csv` (or read it live in the report). This feeds the runtime table in the Phase 5 README. Don't try to time components by hand before the pipeline exists; the numbers won't be comparable to what readers see when they run `tar_make()`.
+**Runtime capture.** `tar_meta(fields = "seconds")` records per-target wall-clock time automatically — no instrumentation needed. The README's runtime table is sourced from a snapshot of this. To regenerate after a future cold run: `targets::tar_meta(fields = "seconds")` and pick out the dominant rows.
 
 **Observed runtimes from the full Phase 4 cold run (2026-05-22 → 2026-05-24).** All numbers from `tar_meta(fields = "seconds")` on Apple M-series silicon. Total wall-clock: **~44 h** across 84 targets.
 - Per-site `pixel_values_<site>` extraction: 16–27 s each.
@@ -156,13 +146,13 @@ Final-mile items before the code accompanies the manuscript. Most depend on the 
 | # | Item | Status |
 |---|---|---|
 | 5.1 | Lock dependencies with `renv` | ✓ done (commit `d741860`) |
-| 5.2 | Rewrite README | pending |
+| 5.2 | Rewrite README | ✓ done (commit `1ace498`) |
 | 5.3 | Rendered `report.Rmd` via `tar_render()` | pending |
 | 5.4 | Dockerfile | pending |
-| 5.5 | CI for Tier 1 tests | pending |
+| 5.5 | CI for Tier 1 tests | ✓ done (commits `02f650c`, `3530e10`) |
 | 5.6 | Output checksums as release artifacts | pending |
 | 5.7 | Code DOI via Zenodo | pending |
-| 5.8 | Repo housekeeping pass | pending |
+| 5.8 | Repo housekeeping pass | partially in flight (drift fixes have been folded into the relevant doc-update commits as they're spotted) |
 
 Hard ordering (from item-1 dependencies): 5.1 must precede 5.2, 5.4, 5.5 (those three reference `renv::restore()` or the locked environment).
 
@@ -182,7 +172,7 @@ Soft ordering (release shape): 5.7 should be last among the artifact items becau
 ## Items
 
 1. **Lock dependencies with `renv`.** ✓ done in commit `d741860`. `renv::init()` captured R 4.5.3 and the full pipeline dependency set, with `saltbush` pinned to commit `aece6a18`. Tier 1 tests pass against the locked environment.
-2. **Rewrite README.** Replace the transitional README with a real entry point. Sections:
+2. **Rewrite README.** ✓ done in commit `1ace498` (+ saltbush hex callout added in commit `bd9f577`). Replaced the transitional README with a real entry point. Sections:
    - **Prerequisites** — R version, GDAL/PROJ, C++17 for `geometry`.
    - **Install** — `renv::restore()`. List the full pinned dependency set with versions (pulled from `renv.lock` after item 1 lands), grouped by role: spatial (`sf`, `terra`), modelling (`glmmTMB`, `performance`, `vegan`, `geometry`), clustering (`randomForest`, `cluster`), pipeline (`targets`, `tarchetypes`, optionally `crew`), figures (`ggnewscale`, `ggh4x`, `ggraph`, `tidygraph`), project-specific (`saltbush` at the pinned commit).
    - **Quick start** — `targets::tar_make()`.
@@ -198,11 +188,58 @@ Soft ordering (release shape): 5.7 should be last among the artifact items becau
    - **License.**
 3. **Rendered report.** `report.Rmd` that loads pipeline outputs via `tar_read()` and produces the manuscript's tables and figures. Wired into the pipeline as a `tar_render()` target so it rebuilds whenever upstream targets change. This is the artifact that ties the code in the repo to the claims in the paper.
 4. **Dockerfile.** Base off `rocker/geospatial:<R version>` (ships GDAL/PROJ pre-installed); call `renv::restore()` at build time; entrypoint runs `targets::tar_make()`. Lets reviewers and readers reproduce the analysis end-to-end without configuring a local R environment.
-5. **CI for Tier 1 tests.** GitHub Actions on push: spin up R against the locked `renv` environment, `Rscript -e 'testthat::test_dir("tests")'`. Catches dependency drift early. Don't try to run Tier 2/3 in CI — the rasters are 4.6 GB and GitHub-hosted runners won't tolerate it.
+5. **CI for Tier 1 tests.** ✓ done in commits `02f650c` (workflow) + `3530e10` (sysdeps fix). `.github/workflows/tests.yml` runs on push and PR against `main`, plus `workflow_dispatch`. ubuntu-latest, pinned R 4.5.3, `renv::restore()`, then `testthat::test_dir("tests")`. Tier 2/3 deliberately not run in CI — the rasters are 4.6 GB and GitHub-hosted runners won't tolerate it. First cold run was ~4 min; subsequent runs are faster from cache.
 6. **Output checksums as release artifacts.** Ship the Tier 1 baseline RDS (and optionally one Tier 2 fixture) alongside the GitHub release so readers can `digest::digest()` their replication output and confirm an exact match.
 7. **Code DOI via Zenodo–GitHub integration.** Enable the integration; cut a `v1.0.0` release; Zenodo mints a DOI for the code, separate from the data DOI (10.5281/zenodo.17089161). Cite both in the manuscript. Update CITATION.cff with the code DOI once it exists.
-8. **Repo housekeeping pass.** Reconcile drift between CLAUDE.md and the tracked-file set before release. Known item: line 21 calls `reports/` "gitignored", but `interim_progress.Rmd`, `interim_progress.html`, and `main_results_summary.txt` are actually tracked (only `*.log` matches an existing ignore rule). Tied to item 3 — once the `tar_render()` report.Rmd lands, decide whether the interim report is retired, whether rendered HTML stays tracked as a published artifact, and update CLAUDE.md + `.gitignore` to match. Sweep for other stale claims at the same time.
+8. **Repo housekeeping pass.** Partially in flight — drift fixes are being folded into the relevant doc-update commits as they're spotted (e.g. the `reports/` gitignored claim was fixed in `1ace498`; the workflow's NDVI/NIR/Red claim corrected to NIR+NDVI only in the same commit; the Phase-4-as-plan-vs-built reframing in the staleness sweep). Outstanding for a dedicated sweep before the v1.0.0 release: decide the fate of `reports/interim_progress.Rmd` once `report.Rmd` (Phase 5.3) lands; check whether the rendered HTML stays tracked as a published artifact; audit `interim_progress.Rmd` itself for staleness; one more grep pass over CLAUDE.md and the README for any remaining mismatches.
 
 Order matters: `renv` must land before items 2 (README references `renv::restore()`), 4 (Dockerfile uses `renv::restore()`), and 5 (CI runs against the locked environment).
 
 Tier 1 + Tier 2 tests should pass against the locked environment after each item lands.
+
+---
+
+# Potential future improvements (post-publication)
+
+Not on the Phase 5 critical path; record here so they're easy to pick up later.
+
+## Make Zenodo data-version bumps a one-line change
+
+`download_zenodo_rasters()` in `funx.R` currently hardcodes four `https://zenodo.org/records/17089161/files/<name>.tif?download=1` URLs and uses **file-size within 5%** as the "already downloaded?" check. Consequences if the underlying dataset is ever republished as a new Zenodo version:
+
+- URLs in `funx.R` need editing in four places (would only need one if the record ID were factored out).
+- The `size = ...` expected sizes need updating.
+- Anyone with the *old* rasters already cached in `data/raster_images/` will silently skip the re-download — `targets` won't detect the version change because the input is a regular value target, not a `format = "file"` target.
+- The data DOI also needs updating in `README.md` (×2), `CITATION.cff` (×2), and `CLAUDE.md` (×3).
+
+Suggested refactor (~30 lines):
+
+1. Centralise the Zenodo record ID and per-file SHA-256s at the top of `funx.R` (or in `_targets.R`):
+   ```r
+   ZENODO_RECORD <- "17089161"
+   ZENODO_RASTERS <- list(
+     list(name = "NSABHC0009_masked.tif", sha256 = "...", size = 1.6e9),
+     ...
+   )
+   ```
+2. In `download_zenodo_rasters()`, replace the size-check with `tools::sha256sum(dest) == f$sha256`. Skip if the local hash matches; download (and re-verify) otherwise. Hard-fail on hash mismatch after download.
+3. Optionally wrap each per-site `raster_<site>` target in a `format = "file"` check that depends on `ZENODO_RECORD` so the DAG invalidates on bump.
+
+Net result: bumping the data version becomes "edit one constant + paste new SHA-256s, push, let `tar_make()` recompute."
+
+Unlikely to be needed for this paper — the dataset is what it is — but cheap to implement and a worthwhile reproducibility upgrade if a follow-up paper uses the same downloader pattern.
+
+## Parallelise the spectral-species seeds
+
+The 20 spectral-species seeds run serially in the current pipeline (~40 h cumulative). They're embarrassingly parallel: each seed is an independent `tar_target`. Wiring in [`{crew}`](https://wlandau.github.io/crew/) (a `tar_make()`-aware backend) would knock the wall-clock to ~5 h on an 8-core machine without changing any of the science. Two lines in `_targets.R`:
+
+```r
+library(crew)
+tar_option_set(controller = crew_controller_local(workers = 8))
+```
+
+Held off during Phase 4d because the weekend serial run was good enough and adding `{crew}` to the lockfile right before a critical run was higher risk than benefit. Worth doing if anyone needs to re-run the full pipeline regularly.
+
+## Investigate the `spectral_metrics` 3 h 5 min runtime
+
+See "When to start worrying" above. The first full cold-run measurement (184 min) is well above the original ≥90 min estimate from the partial Phase 4c run. Could be the real cost of all four sites at n=999, or a Qhull degenerate-point edge case in one site's 5D hull. `tar_workspace(spectral_metrics)` + per-site bisection would resolve it. Not blocking publication; would shave hours off any future cold run if a site turns out to be pathological.
