@@ -7,6 +7,7 @@ The analysis tests whether spectral heterogeneity from drone-borne multispectral
 ## Repo layout
 
 - `_targets.R` — **canonical pipeline driver** (Phase 4). `Rscript -e 'targets::tar_make()'` runs the whole analysis. See "Phase 4 notes" below for design context.
+- `Dockerfile` / `.dockerignore` — alternative install path (Phase 5.4). `rocker/geospatial:4.5.3` base, `renv::restore()` at build time, `CMD` = `tar_make()`. README's "Docker (alternative)" section has the build/run commands.
 - `continuous_metrics_analysis.R` — **legacy driver**, retained as a fallback during the Phase 4 transition. Computes CV, SV, 5D CHV using rarefaction (n=999); fits per-taxonomic-metric × per-spectral-metric mixed models. Its model-fitting logic now lives in `funx.R::fit_spectral_biodiversity_model()` and is called from `_targets.R`. Plan to retire after Phase 5.3 lands `report.Rmd`.
 - `spectral_species_analysis.R` — **legacy driver**, same status. Per-seed RF + k-means clustering logic is now in `funx.R::spectral_species_one_seed()` and called from `_targets.R` via a `tar_map` over 20 seeds.
 - `figures-for-publication.R` — **legacy figure generator**, not yet migrated. Reads `data_out/` outputs and produces Figure 5 (`masked_24_plot.png`) and Figure 6 (`cv_band_combinations_plot.png`). Re-fits the 12 mixed models inline (redundant with the cached fits in the targets DAG). Phase 5.3 (`report.Rmd`) should absorb these as `tar_render()` chunks reusing cached fits via `predict()`.
@@ -149,7 +150,7 @@ Final-mile items before the code accompanies the manuscript. Most depend on the 
 | 5.1 | Lock dependencies with `renv` | ✓ done (commit `d741860`) |
 | 5.2 | Rewrite README | ✓ done (commit `1ace498`) |
 | 5.3 | Rendered `report.Rmd` via `tar_render()` | ✓ done |
-| 5.4 | Dockerfile | pending |
+| 5.4 | Dockerfile | ✓ done |
 | 5.5 | CI for Tier 1 tests | ✓ done (commits `02f650c`, `3530e10`) |
 | 5.6 | Output checksums as release artifacts | pending |
 | 5.7 | Code DOI via Zenodo | pending |
@@ -188,7 +189,7 @@ Soft ordering (release shape): 5.7 should be last among the artifact items becau
    - **Data and code citations** — Zenodo data DOI (10.5281/zenodo.17089161) and the code DOI from item 7.
    - **License.**
 3. **Rendered report.** ✓ done. `reports/report.Rmd` loads pipeline outputs via `tar_read()` and produces the workflow figure, Figures 5 and 6, three model summary tables, and a runtime footer. Wired into the pipeline as a `tar_render()` target with `knit_root_dir = ".."` so the Rmd executes with the project root as its working directory (lets `source("funx.R")` and the default `_targets/` store resolve naturally without polluting `_targets.yaml`). Output: `reports/report.html`, tracked. `figures-for-publication.R` is now superseded for inline figure viewing; it stays for now as the standalone PNG-export driver for manuscript submission (decide its fate in 5.8).
-4. **Dockerfile.** Base off `rocker/geospatial:<R version>` (ships GDAL/PROJ pre-installed); call `renv::restore()` at build time; entrypoint runs `targets::tar_make()`. Lets reviewers and readers reproduce the analysis end-to-end without configuring a local R environment.
+4. **Dockerfile.** ✓ done. `Dockerfile` bases off `rocker/geospatial:4.5.3` (exact-R-version pin against the lockfile; the geospatial flavour ships GDAL/PROJ/GEOS/UDUNITS so the only extra apt install is `libglpk-dev libgmp-dev` for igraph). The lockfile is copied into the image first so the heavy `renv::restore()` layer caches across code changes. Default `CMD` runs `targets::tar_make()`; users override for interactive sessions. `.dockerignore` excludes `_targets/`, `data/raster_images/`, `renv/library/`, etc. so users bind-mount those at runtime to persist between containers. **Not validated by local build** — no Docker daemon on the dev machine — but built against documented `rocker` + `renv` patterns and the same sysdep list that CI proved sufficient. First user-side build will be the validation step.
 5. **CI for Tier 1 tests.** ✓ done in commits `02f650c` (workflow) + `3530e10` (sysdeps fix). `.github/workflows/tests.yml` runs on push and PR against `main`, plus `workflow_dispatch`. ubuntu-latest, pinned R 4.5.3, `renv::restore()`, then `testthat::test_dir("tests")`. Tier 2/3 deliberately not run in CI — the rasters are 4.6 GB and GitHub-hosted runners won't tolerate it. First cold run was ~4 min; subsequent runs are faster from cache.
 6. **Output checksums as release artifacts.** Ship the Tier 1 baseline RDS (and optionally one Tier 2 fixture) alongside the GitHub release so readers can `digest::digest()` their replication output and confirm an exact match.
 7. **Code DOI via Zenodo–GitHub integration.** Enable the integration; cut a `v1.0.0` release; Zenodo mints a DOI for the code, separate from the data DOI (10.5281/zenodo.17089161). Cite both in the manuscript. Update CITATION.cff with the code DOI once it exists.

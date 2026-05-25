@@ -27,7 +27,7 @@ This repository is the **paper-specific application** of a reusable R package ca
 The pipeline is driven by [`{targets}`](https://books.ropensci.org/targets/), so reproducing the full analysis is three commands once prerequisites are in place. Two routes:
 
 - **Native R (recommended for users with R already set up).** Steps below.
-- **Docker** (forthcoming in v1.0.0): a `rocker/geospatial`-based image will provide GDAL/PROJ pre-installed and run the pipeline end-to-end with no host R configuration. Use this if you'd rather not install R packages locally.
+- **Docker** — a `rocker/geospatial`-based image runs the pipeline end-to-end with no host R configuration. Use this if you'd rather not install R packages locally. See [Docker (alternative)](#docker-alternative) below.
 
 ### Prerequisites
 
@@ -103,6 +103,48 @@ You don't have to run the full 44 h cold-run to verify the published numbers. Fr
 - **Cached `_targets/`:** if you obtain the project's `_targets/` cache (release artifact attached to the GitHub release, forthcoming in v1.0.0), drop it into the project root and `tar_make()` will skip every cached step. Expect minutes, not hours.
 - **Just the model results:** the v1.0.0 release will include the model-result RDS files (`spectral_biodiversity_model_results.rds`, etc.) as attached assets. Download them and compare with `digest::digest()` against your own run.
 - **Cheap targets only:** `Rscript -e 'targets::tar_make(callr_function = NULL, names = c("taxonomic_diversity", "pixel_values"))'` runs only the fast pieces (under a minute).
+
+### Docker (alternative)
+
+If you'd rather not install R + GDAL/PROJ + ~200 R packages locally, build the image and run the pipeline in a container instead:
+
+```sh
+git clone https://github.com/adelegem/multispectral_drone_svh.git
+cd multispectral_drone_svh
+
+# Build the image (~20–30 min on a cold cache; renv::restore() compiles
+# or downloads everything in the lockfile).
+docker build -t multispectral_drone_svh .
+
+# Run the pipeline. Bind-mount these host directories so the heavy bits
+# (Zenodo rasters, _targets/ cache, rendered report) persist between runs
+# rather than being thrown away with the container.
+docker run --rm \
+  -v "$(pwd)/data:/workspace/data" \
+  -v "$(pwd)/_targets:/workspace/_targets" \
+  -v "$(pwd)/reports:/workspace/reports" \
+  multispectral_drone_svh
+```
+
+What this gives you:
+
+- **Pinned R + system deps**, including GDAL/PROJ/GEOS/UDUNITS, the saltbush GitHub commit, and every package in `renv.lock`. Nothing on your host R install (if you have one) is touched.
+- **Reproducibility by construction.** The `FROM rocker/geospatial:4.5.3` line pins the same R version captured in the lockfile, so the build is bit-for-bit reproducible against the published numbers.
+
+Override the default command to drop into an interactive R session:
+
+```sh
+docker run --rm -it \
+  -v "$(pwd)/data:/workspace/data" \
+  -v "$(pwd)/_targets:/workspace/_targets" \
+  multispectral_drone_svh R
+```
+
+If you hit GitHub rate limits while `renv::restore()` is pulling saltbush from `traitecoevo/saltbush`, pass a PAT at build time:
+
+```sh
+docker build --build-arg GITHUB_PAT=$(gh auth token) -t multispectral_drone_svh .
+```
 
 ---
 

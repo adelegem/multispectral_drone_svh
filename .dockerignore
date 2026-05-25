@@ -1,0 +1,28 @@
+# Heavy / ephemeral things the container should rebuild or bind-mount instead.
+renv/library/
+renv/staging/
+renv/sandbox/
+_targets/
+data/raster_images/
+data_out/
+maps_graphs/
+
+# Build outputs that the container regenerates.
+reports/report.html
+reports/report_files/
+
+# Transient working files.
+reports/workflow_*.png
+reports/workflow_*.mmd
+reports/*.log
+*.log
+.DS_Store
+**/.DS_Store
+
+# Git internals (not needed at runtime).
+.git/
+
+# Editor cruft.
+*.swp
+*.swo
+*~
