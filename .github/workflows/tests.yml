@@ -17,14 +17,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # System libraries that sf / terra / units link against. Must come
-      # before setup-renv, since renv::restore() will try to install those
-      # R packages and will fail without the underlying C libs.
+      # System libraries needed by packages in the lockfile. Must come
+      # before setup-renv since renv::restore() compiles these from source.
+      #   sf / terra / units      → gdal, proj, geos, udunits2
+      #   igraph (via ggraph)     → glpk, gmp
+      #   xml2, curl, openssl     → xml2, curl, ssl
+      #   ragg / textshaping      → fontconfig, freetype, harfbuzz, fribidi
+      #   tiff / png / jpeg       → image libs
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libgdal-dev libproj-dev libgeos-dev libudunits2-dev
+            libgdal-dev libproj-dev libgeos-dev libudunits2-dev \
+            libglpk-dev libgmp-dev \
+            libxml2-dev libssl-dev libcurl4-openssl-dev \
+            libfontconfig1-dev libfreetype6-dev \
+            libharfbuzz-dev libfribidi-dev \
+            libpng-dev libtiff-dev libjpeg-dev
 
       - uses: r-lib/actions/setup-r@v2
         with:
