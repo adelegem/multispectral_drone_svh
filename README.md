@@ -100,31 +100,24 @@ The spectral-species run is the wall-clock bottleneck. Parallelising it across c
 
 You don't have to run the full 44 h cold-run to verify the published numbers. From most → least work:
 
-- **Lightweight cache drop-in (~10–15 min)** — the v1.0.0 GitHub release (forthcoming) attaches `_targets_lite.tar.gz`, a ~2 MB tarball of every cached pipeline output *except* the bulky raw pixel matrices. Until v1.0.0 is cut the asset isn't downloadable yet; once it is, either of these works:
+- **Lightweight cache drop-in (~10–15 min)** — the GitHub release attaches `_targets_lite.tar.gz`, a ~2 MB tarball of every cached pipeline output *except* the four raw pixel matrices (too large to distribute). From a fresh clone:
 
   ```sh
-  # With the gh CLI:
-  gh release download v1.0.0 -p '_targets_lite.tar.gz'
+  # 1. Install R dependencies (once, ~15–30 min first time)
+  Rscript -e 'renv::restore()'
 
-  # Or plain curl (no auth, no gh install needed):
+  # 2. Download and unpack the lightweight cache
   curl -L -o _targets_lite.tar.gz \
-    https://github.com/adelegem/multispectral_drone_svh/releases/download/v1.0.0/_targets_lite.tar.gz
-  ```
-
-  Then:
-
-  ```sh
+    https://github.com/adelegem/multispectral_drone_svh/releases/download/v0.0.1/_targets_lite.tar.gz
   mkdir -p _targets && tar -xzf _targets_lite.tar.gz -C _targets/
+
+  # 3. Run the pipeline — only pixel extraction rebuilds, everything else is cached
   Rscript -e 'targets::tar_make()'
   ```
 
-  The tarball includes the `_targets/` metadata and every cached object *except* the four raw pixel matrices (`pixel_values_NSABHC0009` … `0012`, ~3.6 GB combined — too large to distribute). When you run `tar_make()`, here's what happens:
+  That's it. Step 3 downloads the Zenodo rasters (~4.4 GB, one-time), re-extracts the pixel matrices (~10–15 min), and verifies them against the cache. All 80 downstream targets (spectral metrics, 20-seed clustering, model fits, report) are skipped because their inputs haven't changed.
 
-  1. **Pixel extraction rebuilds (~2 min compute, ~10–15 min wall-clock).** `targets` sees that the four `pixel_values_*` objects are missing from the cache, so it re-extracts them from the Zenodo rasters. This is the only step that actually runs.
-  2. **Everything else stays cached.** `targets` hashes each rebuilt pixel matrix and compares it to the hash recorded in the cache metadata. If the hashes match — and they will, given the locked R environment and identical Zenodo rasters — then all 80 downstream targets (`spectral_metrics`, the 20 spectral-species seeds, every model fit, and the rendered report) are already up to date and are skipped.
-  3. **Built-in verification.** If something *were* different (a different R version, a modified raster), the pixel hashes wouldn't match, and `targets` would automatically invalidate and rebuild everything downstream rather than silently using mismatched results.
-
-  Locally verified end-to-end before release.
+  If something *were* different (a different R version, a modified raster), the pixel hashes wouldn't match and `targets` would automatically invalidate and rebuild everything downstream rather than silently using mismatched results.
 
 - **Just the model results** — same release attaches the model-result RDS files (`spectral_biodiversity_model_results.rds`, etc.) directly. Download them and compare with `digest::digest()` against the digests listed in *Verifying your reproduction* below.
 
