@@ -785,7 +785,7 @@ make_figure_6 <- function(model_results, cv_band_results) {
       ~ taxonomic_metric, nrow = 1,
       labeller = labeller(taxonomic_metric = taxonomic_labels_fig6)
     ) +
-    labs(x = "Beta co-efficient", y = NULL) +
+    labs(x = expression(beta * " co-efficient"), y = NULL) +
     guides(color = "none") +
     theme_minimal() +
     theme(
