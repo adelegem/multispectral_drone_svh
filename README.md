@@ -11,6 +11,17 @@ The analysis tests whether spectral heterogeneity from drone-borne multispectral
 
 ---
 
+## Applying these methods to your own data → use **saltbush**
+
+<a href="https://github.com/traitecoevo/saltbush"><img src="images/saltbush_hex.png" align="right" width="140" alt="saltbush hex logo" /></a>
+
+This repository is the **paper-specific application** of a reusable R package called [**saltbush**](https://github.com/traitecoevo/saltbush). saltbush provides the general-purpose spectral-diversity engine — pixel extraction, coefficient of variation, spectral variance, *n*-dimensional convex-hull volume with rarefaction, AusPlots field-diversity calculations. This repo wires saltbush into a `{targets}` pipeline for the specific four-site arid-NSW dataset described in the manuscript.
+
+- **You have your own multispectral imagery and want to compute spectral diversity from it?** → Install [`traitecoevo/saltbush`](https://github.com/traitecoevo/saltbush) (`remotes::install_github("traitecoevo/saltbush")`) and read its vignettes. The functions used here (`calculate_field_diversity()`, `extract_pixel_values()`, `calculate_spectral_metrics()`) are part of saltbush's public API.
+- **You want to replicate the specific results in the paper?** → Keep reading.
+
+---
+
 ## Reproducing the analysis
 
 The pipeline is driven by [`{targets}`](https://books.ropensci.org/targets/), so reproducing the full analysis is three commands once prerequisites are in place. Two routes:
