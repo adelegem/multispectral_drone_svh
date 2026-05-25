@@ -668,7 +668,11 @@ make_figure_5 <- function(metrics, model_results, fits) {
     left_join(
       model_results %>% dplyr::select(taxonomic_metric, spectral_metric, significance),
       by = c("taxonomic_metric", "spectral_metric")
-    )
+    ) %>%
+    # left_join coerces the factor back to character (model_results has it as
+    # character); re-factor so facet_grid renders rows in the intended order
+    # (species_richness first) rather than alphabetical.
+    mutate(taxonomic_metric = factor(taxonomic_metric, levels = names(taxonomic_labels)))
 
   df_long %>%
     ggplot(aes(x = spectral_value, y = taxonomic_value, color = site)) +
@@ -712,6 +716,12 @@ make_figure_5 <- function(metrics, model_results, fits) {
       panel.grid.major    = element_blank(),
       panel.grid.minor    = element_blank(),
       axis.text.y         = element_text(size = 14),
+      # Minimal axes: thin per-facet panel border + short ticks so every
+      # panel has a subtle anchor without adding visual weight. (axis.line
+      # alone only shows on the outermost facet edges under facet_grid.)
+      panel.border        = element_rect(color = "grey70", fill = NA, linewidth = 0.3),
+      axis.ticks          = element_line(linewidth = 0.3, color = "grey50"),
+      axis.ticks.length   = unit(0.12, "cm"),
       strip.text.x        = element_text(size = 14),
       strip.text.y        = element_text(size = 14),
       axis.title.x.bottom = element_blank(),
@@ -757,7 +767,7 @@ make_figure_6 <- function(model_results, cv_band_results) {
     red.edge_nir           = "Red edge and NIR",
     green_red.edge_nir     = "Green, red edge, NIR",
     green_red_red.edge_nir = "Vegetation bands",
-    all_bands              = "All Bands"
+    all_bands              = "All bands"
   )
   band_colours <- c(
     all_bands              = "black",
@@ -767,8 +777,8 @@ make_figure_6 <- function(model_results, cv_band_results) {
   )
   taxonomic_labels_fig6 <- c(
     species_richness = "Species Richness",
-    exp_shannon      = "Exponential Shannon",
-    inv_simpson      = "Inverse Simpson"
+    exp_shannon      = "Exponential Shannon's",
+    inv_simpson      = "Inverse Simpson's"
   )
 
   all_cv_results %>%
@@ -785,14 +795,14 @@ make_figure_6 <- function(model_results, cv_band_results) {
       ~ taxonomic_metric, nrow = 1,
       labeller = labeller(taxonomic_metric = taxonomic_labels_fig6)
     ) +
-    labs(x = expression(beta * " co-efficient"), y = NULL) +
+    labs(x = expression("Standardized " * beta), y = NULL) +
     guides(color = "none") +
     theme_minimal() +
     theme(
       panel.grid.minor = element_blank(),
       panel.spacing    = unit(2, "lines"),
       text             = element_text(size = 20),
-      strip.text       = element_text(size = 18, face = "bold"),
+      strip.text       = element_text(size = 14, face = "bold"),
       axis.text.y      = element_text(size = 16),
       axis.text.x      = element_text(size = 14),
       axis.title.x     = element_text(size = 18),
