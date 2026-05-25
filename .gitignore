@@ -7,8 +7,8 @@ data_out/
 # Publication figure outputs from figures-for-publication.R
 maps_graphs/
 
-# {targets} pipeline cache (Phase 4b will populate). _targets.R / _targets.yaml
-# are the pipeline definition and must stay tracked.
+# {targets} pipeline cache. _targets.R / _targets.yaml are the pipeline
+# definition and must stay tracked.
 _targets/
 
 # R / RStudio
@@ -41,3 +41,8 @@ Rplots.pdf
 
 # Manuscript drafts — kept outside source control
 *.docx
+
+# Transient workflow-figure drafts (the canonical workflow figure is built
+# inline by make_figure_workflow() in funx.R and embedded in report.html).
+reports/workflow_*.png
+reports/workflow_*.mmd

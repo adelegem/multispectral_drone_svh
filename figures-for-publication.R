@@ -1,13 +1,17 @@
-# Figures for publication
+# Figures for publication — manuscript PNG exporter.
 #
-# Prerequisite: run continuous_metrics_analysis.R first.
-# Reads from data_out/ — all files written by that script.
+# Produces 600-dpi PNGs at the dimensions the manuscript submission needs.
+# Inline figure viewing happens in reports/report.html (Phase 5.3); this
+# script exists alongside it solely to write the high-resolution PNGs.
+#
+# Prerequisite: legacy data_out/ inputs from continuous_metrics_analysis.R.
+# A future cleanup would migrate readRDS() → tar_read() so this script
+# pulls from the targets cache directly; not blocking publication.
 #
 # Figure 5: spectral vs taxonomic diversity scatter plots (masked_24_plot)
 # Figure 6: CV beta coefficients across spectral band combinations (cv_bands_plot)
 #
-# Additional packages beyond those listed in the README:
-#   install.packages(c("ggnewscale", "ggh4x"))
+# All required packages are in renv.lock.
 
 library(tidyverse)
 library(glmmTMB)        # for predict.glmmTMB dispatch on cached _mixed fits

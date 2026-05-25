@@ -95,11 +95,10 @@
 #      flag column indicating which kind it got.
 #
 # 6. Manuscript report.
-#      report.Rmd under tar_render() is Phase 5. The interim_progress.Rmd in
-#      reports/ is the running-state log, not the manuscript artifact.
-#      Decision: interim_progress.Rmd stays hand-rendered (it tracks transient
-#      analysis state, not pipeline outputs); only the Phase 5 manuscript
-#      report.Rmd is wired into tar_render().
+#      Decision (Phase 5.3): reports/report.Rmd is the canonical results
+#      document, wired in below as tar_render() with knit_root_dir = ".."
+#      so it executes with the project root as cwd. The legacy
+#      interim_progress.Rmd was retired in Phase 5.8.
 #
 # =============================================================================
 
