@@ -100,10 +100,20 @@ The spectral-species run is the wall-clock bottleneck. Parallelising it across c
 
 You don't have to run the full 44 h cold-run to verify the published numbers. From most → least work:
 
-- **Lightweight cache drop-in (~10–15 min)** — the v1.0.0 GitHub release (forthcoming) attaches `_targets_lite.tar.gz`, a ~2 MB tarball of every cached pipeline output *except* the bulky raw pixel matrices:
+- **Lightweight cache drop-in (~10–15 min)** — the v1.0.0 GitHub release (forthcoming) attaches `_targets_lite.tar.gz`, a ~2 MB tarball of every cached pipeline output *except* the bulky raw pixel matrices. Until v1.0.0 is cut the asset isn't downloadable yet; once it is, either of these works:
 
   ```sh
+  # With the gh CLI:
   gh release download v1.0.0 -p '_targets_lite.tar.gz'
+
+  # Or plain curl (no auth, no gh install needed):
+  curl -L -o _targets_lite.tar.gz \
+    https://github.com/adelegem/multispectral_drone_svh/releases/download/v1.0.0/_targets_lite.tar.gz
+  ```
+
+  Then:
+
+  ```sh
   mkdir -p _targets && tar -xzf _targets_lite.tar.gz -C _targets/
   Rscript -e 'targets::tar_make()'
   ```
