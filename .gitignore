@@ -46,3 +46,7 @@ Rplots.pdf
 # inline by make_figure_workflow() in funx.R and embedded in report.html).
 reports/workflow_*.png
 reports/workflow_*.mmd
+
+# Release artifacts built by tools/pack_cache.R — uploaded to GitHub release,
+# not tracked here.
+_targets_lite.tar.gz

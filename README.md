@@ -100,9 +100,19 @@ The spectral-species run is the wall-clock bottleneck. Parallelising it across c
 
 You don't have to run the full 44 h cold-run to verify the published numbers. From most → least work:
 
-- **Cached `_targets/`:** if you obtain the project's `_targets/` cache (release artifact attached to the GitHub release, forthcoming in v1.0.0), drop it into the project root and `tar_make()` will skip every cached step. Expect minutes, not hours.
-- **Just the model results:** the v1.0.0 release will include the model-result RDS files (`spectral_biodiversity_model_results.rds`, etc.) as attached assets. Download them and compare with `digest::digest()` against your own run.
-- **Cheap targets only:** `Rscript -e 'targets::tar_make(callr_function = NULL, names = c("taxonomic_diversity", "pixel_values"))'` runs only the fast pieces (under a minute).
+- **Lightweight cache drop-in (~10–15 min)** — the v1.0.0 GitHub release (forthcoming) attaches `_targets_lite.tar.gz`, a ~2 MB tarball of every cached pipeline output *except* the bulky raw pixel matrices:
+
+  ```sh
+  gh release download v1.0.0 -p '_targets_lite.tar.gz'
+  mkdir -p _targets && tar -xzf _targets_lite.tar.gz -C _targets/
+  Rscript -e 'targets::tar_make()'
+  ```
+
+  `tar_make()` rebuilds only the four per-site pixel-extraction targets (~2 min compute, ~10–15 min wall-clock once R startup + 4 GB transient memory pressure is accounted for) and re-uses every downstream cached value — `spectral_metrics`, all 20 spectral-species seeds, every model fit, the rendered report. The pixel rebuild's content hash is checked against the cached value: if it matches (it will, given the locked R environment + matching Zenodo rasters), downstream stays cached; if it doesn't, you get an explicit invalidation cascade rather than silently mismatched results — implicit determinism check. Locally verified end-to-end before release.
+
+- **Just the model results** — same release attaches the model-result RDS files (`spectral_biodiversity_model_results.rds`, etc.) directly. Download them and compare with `digest::digest()` against the digests listed in *Verifying your reproduction* below.
+
+- **Cheap targets only** — `Rscript -e 'targets::tar_make(names = c("taxonomic_diversity", "pixel_values"))'` runs only the fast pieces in a few minutes (no cache needed).
 
 ### Docker (alternative)
 
