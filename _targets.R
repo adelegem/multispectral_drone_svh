@@ -153,9 +153,11 @@ sites_lookup <- tibble::tibble(
 # phase_4b_branches$pixel_values, etc.) so Phase 4c's tar_combine can
 # fan back in over $pixel_values without re-enumerating site names.
 #
-# raster_<site>:  depends on raster_files (the download gate — ensures
-#                 the .tif exists on a fresh checkout) then content-tracks
-#                 the single per-site .tif. A change to one raster
+# raster_<site>:  calls download_zenodo_rasters() inline (idempotent —
+#                 skips files already present) then content-tracks the
+#                 single per-site .tif. Inline call is necessary so the
+#                 download runs even when the lite cache marks a previous
+#                 download gate as complete. A change to one raster
 #                 invalidates only that site's pixel_values.
 # fishnet_<site>: shapefiles are tracked in git; just content-track each
 #                 .shp directly (sidecar .dbf/.shx/.prj changes are
@@ -166,8 +168,9 @@ phase_4b_branches <- tar_map(
   values = sites_lookup,
   names  = site,
   unlist = FALSE,
-  tar_target(raster,  { raster_files; raster_file }, format = "file"),
-  tar_target(fishnet, fishnet_file,                  format = "file"),
+  tar_target(raster,  { download_zenodo_rasters("data/raster_images"); raster_file },
+             format = "file"),
+  tar_target(fishnet, fishnet_file, format = "file"),
   tar_target(pixel_values,
              extract_pixel_values(raster, fishnet, WAVELENGTHS))
 )
@@ -178,14 +181,6 @@ phase_4b_targets <- list(
   # `format = "file"` tracks a file by content hash + mtime. Subsequent
   # tar_make() calls skip if unchanged.
   tar_target(survey_csv, "data/ausplots_march_24.csv", format = "file"),
-
-  # Zenodo downloader gates the per-site raster file targets above. It's
-  # idempotent (skips files already present at expected size) and returns
-  # the four paths. NOT format = "file" on purpose — content-tracking the
-  # 4-file bundle would invalidate every per-site branch on a single
-  # raster change. Per-site `raster_<site>` file targets handle that.
-  tar_target(raster_files,
-             download_zenodo_rasters("data/raster_images")),
 
   # ---- taxonomic diversity -----------------------------------------------
   # Single fast target — no per-site branching needed. Reads the CSV at the

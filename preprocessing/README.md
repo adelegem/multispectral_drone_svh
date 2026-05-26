@@ -1,41 +1,76 @@
 # `preprocessing/`
 
-Scripts that produced the masked multispectral rasters archived on Zenodo ([10.5281/zenodo.17089161](https://doi.org/10.5281/zenodo.17089161)). **Not part of the main `{targets}` pipeline** — these scripts run *upstream* of the analysis and only need to be re-run if the raw drone tiles or training data change.
+Scripts documenting how the raw drone outputs were turned into the masked multispectral rasters archived on Zenodo ([10.5281/zenodo.17089161](https://doi.org/10.5281/zenodo.17089161)). **Not part of the main `{targets}` pipeline** — these scripts run *upstream* of the analysis and only need to be re-run if the raw drone tiles or training data change.
+
+Anyone reproducing the analysis downloads the masked rasters directly via `download_zenodo_rasters()` and skips this stage entirely — see the top-level [README](../README.md)'s *Reproducing the analysis* section.
 
 ## Why is this separate from `tar_make()`?
 
-The masked rasters are the *input* to the analysis pipeline. They're produced once per dataset, archived publicly, and downloaded by `tar_make()` via `download_zenodo_rasters()`. Anyone reproducing the analysis grabs the archived rasters directly and skips this stage entirely — see the top-level [README](../README.md)'s *Reproducing the analysis* section.
+The masked rasters are the *input* to the analysis pipeline. They're produced once per dataset and archived publicly. These scripts exist for **transparency**: they document every step from raw drone tiles to Zenodo-archived rasters so reviewers can inspect the full chain.
 
-These scripts exist for **transparency and completeness**: they document how the raw drone outputs were turned into the Zenodo-archived rasters, so reviewers can inspect every step.
+## Three-stage pipeline
 
-## Inputs (not tracked in this repo)
+### Stage 1 — Band stacking *(raw data not in repo)*
 
-- Per-site **raw drone tiles** captured by the multispectral drone (4 sites: NSABHC0009–0012).
-- Per-site **visually classified training pixels** on two axes: veg/non-veg **and** shadow/non-shadow.
+**Inputs:** Per-band GeoTIFFs output by Pix4D (one per band per site, 5 bands: blue, green, red, red-edge, NIR), plus a pre-step illumination correction applied within Pix4D. The raw drone tiles and Pix4D outputs are large and project-specific; contact the authors if you need access for independent verification.
 
-These are large and project-specific; contact the authors if you need access for independent verification.
+**Process:** Stack the 5 per-band GeoTIFFs for each site into a single multiband GeoTIFF in wavelength order using `funx.R::create_multiband_image()`.
 
-## Pre-step: Pix4D (outside R)
+**Output:** One 5-band GeoTIFF per site.
 
-Before any R code runs, **[Pix4D](https://www.pix4d.com/)** orthomosaics each site's drone tiles into a per-band GeoTIFF and applies illumination correction. This is a closed-source GUI workflow and isn't scripted here. The output of Pix4D is one GeoTIFF per band per site, which becomes the input to `01_stack_bands.R` below.
+No script is provided for this step — it cannot be run without the raw Pix4D outputs.
 
-## R scripts (placeholder)
+---
 
-The actual scripts will be added in a follow-up commit. Planned breakdown (3 files), each `source("../funx.R")` for the shared helpers:
+### Stage 2 — ROC threshold selection *(fully reproducible)*
 
-1. **`01_stack_bands.R`** — stack the 5 per-band Pix4D outputs into a single multiband GeoTIFF per site, in wavelength order (blue, green, red, red-edge, NIR).
-2. **`02_find_thresholds.R`** — apply `funx.R::find_optimum_thresholds()` (ROC against the training pixels) to compute the per-site **NIR + NDVI** thresholds. *A Red filter exists in `saltbush` but was deliberately not applied to this dataset.*
-3. **`03_apply_mask.R`** — apply the thresholds via `funx.R::create_masked_raster()` to produce `NSABHC00{09..12}_masked.tif`. These outputs are what gets uploaded to Zenodo and consumed by `tar_make()`.
+**Script:** [`02_roc_thresholds.R`](02_roc_thresholds.R)
 
-All three are independent R sessions — they don't share state. The shared helpers they use (`create_masked_raster`, `find_optimum_thresholds`) live in `../funx.R` for re-use by tests, but are not called from the targets pipeline itself.
+**Inputs** (tracked in this repo):
+- `data/ndvi_reference_point_values.csv` — 100 visually classified points per site (veg | non-veg)
+- `data/nir_reference_point_values.csv` — 100 visually classified points per site (shadow | non-shadow)
 
-## How to run (once scripts land)
+**Process:** Fits ROC curves using the Youden index to find the optimal per-site threshold for separating vegetation from bare ground (NDVI) and non-shadow from shadow (NIR). A Red band filter exists in `saltbush` but was deliberately not applied to this dataset.
+
+**Outputs:**
+- `data_out/ndvi_thresholds_2024.csv` — threshold + AUC + sensitivity/specificity per site
+- `data_out/nir_thresholds.csv`
+- `preprocessing/roc_curves.png` — ROC curves for all sites × both metrics (tracked; also saved to `maps_graphs/`)
 
 ```sh
-# From the project root, with the renv environment activated:
-Rscript preprocessing/01_stack_bands.R
-Rscript preprocessing/02_find_thresholds.R
-Rscript preprocessing/03_apply_mask.R
+# Run from the project root:
+Rscript preprocessing/02_roc_thresholds.R
 ```
 
-These produce the masked TIFFs locally. Uploading the results to Zenodo (and minting the data DOI) is a manual web step done by the project authors.
+Site-specific thresholds:
+
+| Site | NDVI | NIR |
+|---|---|---|
+| NSABHC0009 | 0.02198 | 0.03323 |
+| NSABHC0010 | 0.02310 | 0.05510 |
+| NSABHC0011 | 0.06775 | 0.04225 |
+| NSABHC0012 | 0.04794 | 0.03722 |
+
+![ROC curves for NDVI and NIR thresholds across all four sites](roc_curves.png)
+
+---
+
+### Stage 3 — Apply mask *(raw data not in repo)*
+
+**Inputs:** 5-band GeoTIFFs from Stage 1 + per-site thresholds from Stage 2.
+
+**Process:** Applies the NDVI and NIR thresholds via `funx.R::create_masked_raster()` to zero out bare ground and shadow pixels, producing the final masked rasters.
+
+**Output:** `NSABHC00{09..12}_masked.tif` — the four files archived on Zenodo and downloaded by `tar_make()`.
+
+No script is provided for this step — it cannot be run without the Stage 1 outputs. The masked images can be found at on Zenodo ([10.5281/zenodo.17089161]
+
+---
+
+## Inputs not in this repo
+
+- Per-site raw drone tiles
+- Pix4D per-band GeoTIFFs
+- Stage 1 multiband GeoTIFFs
+
+Contact the authors if you need access to these for independent verification.
