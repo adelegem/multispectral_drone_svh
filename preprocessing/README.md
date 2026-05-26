@@ -1,6 +1,6 @@
 # `preprocessing/`
 
-Scripts documenting how the raw drone outputs were turned into the masked multispectral rasters archived on Zenodo ([10.5281/zenodo.17089161](https://doi.org/10.5281/zenodo.17089161)). **Not part of the main `{targets}` pipeline** — these scripts run *upstream* of the analysis and only need to be re-run if the raw drone tiles or training data change.
+Documenting how the raw drone outputs were turned into the masked multispectral rasters archived on Zenodo ([10.5281/zenodo.17089161](https://doi.org/10.5281/zenodo.17089161)). **Not part of the main `{targets}` pipeline** — these scripts run *upstream* of the analysis and only need to be re-run if the raw drone tiles or training data change.
 
 Anyone reproducing the analysis downloads the masked rasters directly via `download_zenodo_rasters()` and skips this stage entirely — see the top-level [README](../README.md)'s *Reproducing the analysis* section.
 
@@ -42,14 +42,18 @@ No script is provided for this step — it cannot be run without the raw Pix4D o
 Rscript preprocessing/02_roc_thresholds.R
 ```
 
-Site-specific thresholds:
+Site-specific thresholds and ROC diagnostics at the Youden-optimal cut-point:
 
-| Site | NDVI | NIR |
-|---|---|---|
-| NSABHC0009 | 0.02198 | 0.03323 |
-| NSABHC0010 | 0.02310 | 0.05510 |
-| NSABHC0011 | 0.06775 | 0.04225 |
-| NSABHC0012 | 0.04794 | 0.03722 |
+| Site | Metric | Threshold | AUC | Sensitivity | Specificity |
+|---|---|---|---|---|---|
+| NSABHC0009 | NDVI | 0.02198 | 0.981 | 0.984 | 0.944 |
+| NSABHC0010 | NDVI | 0.02310 | 0.956 | 0.923 | 0.878 |
+| NSABHC0011 | NDVI | 0.06775 | 0.924 | 0.845 | 0.931 |
+| NSABHC0012 | NDVI | 0.04794 | 0.886 | 1.000 | 0.800 |
+| NSABHC0009 | NIR | 0.03323 | 0.838 | 0.830 | 0.833 |
+| NSABHC0010 | NIR | 0.05510 | 0.985 | 0.915 | 1.000 |
+| NSABHC0011 | NIR | 0.04225 | 0.834 | 0.714 | 0.865 |
+| NSABHC0012 | NIR | 0.03722 | 0.744 | 0.904 | 0.500 |
 
 ![ROC curves for NDVI and NIR thresholds across all four sites](roc_curves.png)
 

@@ -138,20 +138,6 @@ optimal_points <- function(summary_tbl) {
               y = sensitivity)
 }
 
-# One annotation block per facet, placed in the lower-right empty space.
-# Each row is one site; columns are tab-aligned with sprintf padding.
-panel_annotations <- bind_rows(ndvi_summary, nir_summary) %>%
-  arrange(metric, site) %>%
-  group_by(metric) %>%
-  summarise(
-    label = paste(
-      sprintf("%-12s  t = %.4f   AUC = %.3f   Sens = %.3f   Spec = %.3f",
-              site, threshold, auc, sensitivity, specificity),
-      collapse = "\n"
-    ),
-    .groups = "drop"
-  )
-
 site_colours <- c(
   NSABHC0009 = "darkgreen",
   NSABHC0010 = "saddlebrown",
@@ -175,12 +161,6 @@ roc_plot <- ggplot(plot_df,
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey60") +
   geom_point(data = opt_df, aes(x = x, y = y, colour = site),
              size = 3.5, shape = 21, fill = "white", stroke = 1.5) +
-  geom_label(data = panel_annotations,
-             aes(x = 0.97, y = 0.08, label = label),
-             hjust = 1, vjust = 0, size = 2.6,
-             inherit.aes = FALSE,
-             label.size = 0.3, fill = "grey97", colour = "grey20",
-             family = "mono") +
   facet_wrap(~ metric, nrow = 1) +
   scale_colour_manual(values = site_colours, name = "Site") +
   scale_x_continuous(limits = c(0, 1), labels = scales::percent_format()) +
@@ -197,5 +177,5 @@ roc_plot <- ggplot(plot_df,
 
 roc_plot
 
-ggsave("maps_graphs/roc_curves.png",   roc_plot, width = 12, height = 6, dpi = 300)
+#ggsave("maps_graphs/roc_curves.png",   roc_plot, width = 12, height = 6, dpi = 300)
 ggsave("preprocessing/roc_curves.png", roc_plot, width = 12, height = 6, dpi = 120)
