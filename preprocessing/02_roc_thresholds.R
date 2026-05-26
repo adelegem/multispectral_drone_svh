@@ -197,5 +197,29 @@ roc_plot <- ggplot(plot_df,
 
 roc_plot
 
-ggsave("maps_graphs/roc_curves.png",      roc_plot, width = 12, height = 6, dpi = 300)
-ggsave("preprocessing/roc_curves.png", roc_plot, width = 12, height = 6, dpi = 120)
+ggsave("maps_graphs/roc_curves.png", roc_plot, width = 12, height = 6, dpi = 300)
+
+# Clean version for the preprocessing README — annotation box omitted since
+# the threshold table is already in the README as markdown.
+roc_plot_clean <- roc_plot + theme(legend.position = "bottom")
+roc_plot_clean <- ggplot(plot_df,
+                         aes(x = 1 - specificity, y = sensitivity, colour = site)) +
+  geom_line(linewidth = 0.9) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey60") +
+  geom_point(data = opt_df, aes(x = x, y = y, colour = site),
+             size = 3.5, shape = 21, fill = "white", stroke = 1.5) +
+  facet_wrap(~ metric, nrow = 1) +
+  scale_colour_manual(values = site_colours, name = "Site") +
+  scale_x_continuous(limits = c(0, 1), labels = scales::percent_format()) +
+  scale_y_continuous(limits = c(0, 1), labels = scales::percent_format()) +
+  labs(x = "False positive rate (1 – Specificity)",
+       y = "True positive rate (Sensitivity)") +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.minor  = element_blank(),
+    strip.text        = element_text(face = "bold", size = 13),
+    legend.position   = "bottom",
+    plot.background   = element_rect(fill = "white", colour = "white")
+  )
+
+ggsave("preprocessing/roc_curves.png", roc_plot_clean, width = 10, height = 5, dpi = 150)
