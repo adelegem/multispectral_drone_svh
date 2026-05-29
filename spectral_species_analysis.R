@@ -82,16 +82,19 @@ mean_spectral_species <- mean_spectral_species %>%
 sr_model <- glmmTMB(species_richness ~ spectral_richness + (1 | site), data = mean_spectral_species)
 summary(sr_model)
 r2_nakagawa(sr_model)
+rmse(sr_model)
 
 # spectral shannons diversity
-sh_model <- glmmTMB(shannon_diversity ~ shannon_spectral+ (1 | site), data = mean_spectral_species)
+sh_model <- glmmTMB(shannon_diversity ~ shannon_spectral + (1 | site), data = mean_spectral_species)
 summary(sh_model)
 r2_nakagawa(sh_model)
+rmse(sh_model)
 
 # spectral simpsons diversity
 si_model <- glmmTMB(simpson_diversity ~ simpson_spectral + (1 | site), data = mean_spectral_species)
 summary(si_model)
 r2_nakagawa(si_model)
+rmse(si_model)
 
 # Persist outputs for downstream reporting. data_out/ is gitignored.
 if (!dir.exists("data_out")) dir.create("data_out", recursive = TRUE)
@@ -100,4 +103,11 @@ saveRDS(mean_spectral_species, "data_out/mean_spectral_species.rds")
 saveRDS(sr_model,              "data_out/sr_model.rds")
 saveRDS(sh_model,              "data_out/sh_model.rds")
 saveRDS(si_model,              "data_out/si_model.rds")
+
+spectral_species_rmse <- tibble::tibble(
+  model    = c("species_richness", "shannon_diversity", "simpson_diversity"),
+  response = c("spectral_richness", "shannon_spectral", "simpson_spectral"),
+  rmse     = c(rmse(sr_model), rmse(sh_model), rmse(si_model))
+)
+saveRDS(spectral_species_rmse, "data_out/spectral_species_rmse.rds")
 
