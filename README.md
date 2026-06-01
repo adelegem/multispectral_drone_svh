@@ -189,17 +189,21 @@ flowchart TD
   classDef model fill:#fef6e4,stroke:#a87
   classDef fig fill:#e8f3ea,stroke:#4a6
 
+  dsurvey[Drone survey<br/>March 2024]:::anal
+
   subgraph preprocess [Preprocessing — done once; outputs archived on Zenodo]
     direction TB
     drone[Drone tiles<br/>4 sites] --> pix4d
-    train[Visually classified<br/>training pixels<br/>veg/non-veg, shadow/non-shadow] --> roc
+    train["Visually classified<br/>training pixels<br/>(veg/non-veg, shadow/non-shadow)"] --> roc
     pix4d[Pix4D ortho mosaic +<br/>illumination correction +<br/>5-band stacking] --> roc
     roc[ROC-optimised<br/>per-site thresholds<br/>NIR + NDVI] --> masked
     masked[Masked multiband<br/>rasters: 4 sites × 5 bands]
   end
   class preprocess,drone,train,pix4d,roc,masked pre
 
-  fishnets[5 × 5 fishnets<br/>per site]:::anal
+  dsurvey --> drone
+
+  fishnets[Subplot shapefiles<br/>5 × 5 grid per site]:::anal
   survey[AusPlots survey<br/>March 2024]:::anal
 
   masked --> cont[Continuous metrics<br/>CV / SV / 5D-CHV<br/>rarefied n=999, seed=42]:::anal
@@ -208,12 +212,13 @@ flowchart TD
   fishnets --> cont & cvsubset & ss
   survey --> tax[Taxonomic diversity<br/>S, exp H', 1/D, J']:::anal
 
-  cont & tax --> m1[12 glmmTMB mixed models<br/>tax × spec, site as random effect<br/>singular-fit refit for J']:::model
+  cont & tax --> m1[12 glmmTMB mixed models<br/>tax × spec, site as random effect]:::model
   cvsubset & tax --> m2[CV band-subset models]:::model
   ss & tax --> m3[Spectral-species models]:::model
 
-  m1 & m2 --> fig5[Figure 5<br/>spectral vs taxonomic]:::fig
-  m2 --> fig6[Figure 6<br/>CV across band combinations]:::fig
+  m1 --> fig6[Figure 6<br/>spectral vs taxonomic]:::fig
+  m2 --> fig7[Figure 7<br/>CV across band combinations]:::fig
+  m3 --> fig8[Figure 8<br/>spectral species]:::fig
 ```
 
 The dashed block is upstream of this repo: the rasters arrive pre-masked from Zenodo, so `tar_make()` covers only the steps below the dashed block. The scripts that produced the Zenodo-archived rasters live in [`preprocessing/`](preprocessing/) for transparency — they're **not** invoked by `tar_make()` and aren't needed to reproduce the analysis. See `preprocessing/README.md` for what they do and what inputs they need.
