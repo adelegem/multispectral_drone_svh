@@ -162,7 +162,7 @@ Final-mile items before the code accompanies the manuscript. Most depend on the 
 
 Hard ordering (from item-1 dependencies): 5.1 must precede 5.2, 5.4, 5.5 (those three reference `renv::restore()` or the locked environment).
 
-Soft ordering (release shape): 5.7 should be last among the artifact items because the v1.0.0 release that mints the code DOI should be a complete, documented, reproducible artifact. 5.8 is the final reconciliation sweep.
+Soft ordering (release shape): 5.7 should be last among the artifact items because the `v1.0.0` release should be a complete, documented, reproducible artifact before the concept DOI resolves to it. (The concept DOI itself is already minted — see 5.7 — so this is about which *version* it points at, not about minting.) 5.8 is the final reconciliation sweep.
 
 ```
  5.1 (renv) ─┬─→ 5.2 (README)     ─┐
@@ -216,7 +216,7 @@ Not on the Phase 5 critical path; record here so they're easy to pick up later.
 - URLs in `funx.R` need editing in four places (would only need one if the record ID were factored out).
 - The `size = ...` expected sizes need updating.
 - Anyone with the *old* rasters already cached in `data/raster_images/` will silently skip the re-download — `targets` won't detect the version change because the input is a regular value target, not a `format = "file"` target.
-- The data DOI also needs updating in `README.md` (×2), `CITATION.cff` (×2), and `CLAUDE.md` (×3).
+- The data DOI string (`17089161`) appears in several spots across `README.md`, `CITATION.cff`, and `CLAUDE.md` and all of them need updating — `grep -rl 17089161` finds the files. (The code DOI lives at a separate Zenodo record — concept `20387946` — and is *not* touched by a data-version bump.)
 
 Suggested refactor (~30 lines):
 
