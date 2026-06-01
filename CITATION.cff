@@ -4,8 +4,14 @@ title: >-
   hypothesis to arid shrublands using multispectral drone imagery
 message: >-
   If you use this software, please cite both the code (this CITATION
-  file) and the associated dataset (10.5281/zenodo.17089161).
+  file, DOI 10.5281/zenodo.20387946) and the associated dataset
+  (10.5281/zenodo.17089161).
 type: software
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.20387946
+    description: >-
+      Concept DOI for the code (resolves to the latest release).
 authors:
   - family-names: Gemmell
     given-names: Adele

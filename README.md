@@ -1,13 +1,15 @@
 # multispectral_drone_svh
 
 [![Tier 1 tests](https://github.com/adelegem/multispectral_drone_svh/actions/workflows/tests.yml/badge.svg)](https://github.com/adelegem/multispectral_drone_svh/actions/workflows/tests.yml)
+[![Code DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20387946.svg)](https://doi.org/10.5281/zenodo.20387946)
+[![Data DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17089161.svg)](https://doi.org/10.5281/zenodo.17089161)
 
 Code supporting Gemmell et al., *"Applying the spectral variability hypothesis to arid shrublands, using multispectral drone imagery."*
 
 The analysis tests whether spectral heterogeneity from drone-borne multispectral imagery (5 bands: blue, green, red, red-edge, NIR) predicts taxonomic plant diversity across four AusPlot sites in arid NSW (NSABHC0009–0012), each surveyed as a 5×5 grid of 20 m subplots.
 
 **Data DOI:** [10.5281/zenodo.17089161](https://doi.org/10.5281/zenodo.17089161) (4.4 GB, four masked multiband GeoTIFFs — auto-downloaded on first run).
-**Code DOI:** minted at v1.0.0 via Zenodo (forthcoming).
+**Code DOI:** [10.5281/zenodo.20387946](https://doi.org/10.5281/zenodo.20387946) (concept DOI; always resolves to the latest release).
 
 ---
 
@@ -302,7 +304,7 @@ Full list from `renv.lock`. Run `renv::restore()` to install all of these at the
 
 ## Citation
 
-If you use this code or data, please cite both. Structured metadata in [`CITATION.cff`](CITATION.cff). The dataset DOI is [10.5281/zenodo.17089161](https://doi.org/10.5281/zenodo.17089161); the code DOI will be added on v1.0.0 release.
+If you use this code or data, please cite both. Structured metadata in [`CITATION.cff`](CITATION.cff). The code DOI is [10.5281/zenodo.20387946](https://doi.org/10.5281/zenodo.20387946) (concept DOI; always resolves to the latest release) and the dataset DOI is [10.5281/zenodo.17089161](https://doi.org/10.5281/zenodo.17089161).
 
 ---
 
