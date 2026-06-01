@@ -67,7 +67,7 @@ Site-specific thresholds and ROC diagnostics at the Youden-optimal cut-point:
 
 **Output:** `NSABHC00{09..12}_masked.tif` — the four files archived on Zenodo and downloaded by `tar_make()`.
 
-No script is provided for this step — it cannot be run without the Stage 1 outputs. The masked images can be found at on Zenodo ([10.5281/zenodo.17089161]
+No script is provided for this step — it cannot be run without the Stage 1 outputs. The masked images are archived on Zenodo ([10.5281/zenodo.17089161](https://doi.org/10.5281/zenodo.17089161)).
 
 ---
 
