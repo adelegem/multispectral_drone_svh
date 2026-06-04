@@ -764,9 +764,9 @@ make_figure_6 <- function(model_results, cv_band_results) {
     )
 
   band_labels <- c(
-    red.edge_nir           = "Red edge and NIR",
-    green_red.edge_nir     = "Green, red edge, NIR",
-    green_red_red.edge_nir = "Vegetation bands",
+    red.edge_nir           = "Red-edge and near infrared",
+    green_red.edge_nir     = "Green, red-edge, near infrared",
+    green_red_red.edge_nir = "Greed, red, red-edge, near infrared",
     all_bands              = "All bands"
   )
   band_colours <- c(
@@ -808,6 +808,69 @@ make_figure_6 <- function(model_results, cv_band_results) {
       axis.title.x     = element_text(size = 18),
       axis.title.y     = element_blank(),
       plot.background  = element_rect(fill = "white", color = "white")
+    )
+}
+
+
+# Spectral-species scatter figure — three panels (richness / Shannon / Simpson)
+# showing spectral diversity (y) vs taxonomic diversity (x), coloured by site,
+# with a 1:1 dashed reference line. Takes a pre-joined ss_data data frame with
+# columns: site, species_richness, shannon_diversity, simpson_diversity,
+# spectral_richness, shannon_spectral, simpson_spectral. Requires patchwork loaded.
+make_figure_ss <- function(ss_data) {
+  site_colours <- c(
+    NSABHC0009 = "darkgreen",
+    NSABHC0010 = "saddlebrown",
+    NSABHC0011 = "navajowhite2",
+    NSABHC0012 = "darkseagreen"
+  )
+
+  panel_theme <- theme_minimal() +
+    theme(
+      panel.grid.major  = element_line(colour = "grey95"),
+      panel.grid.minor  = element_blank(),
+      panel.border      = element_rect(colour = "grey70", fill = NA, linewidth = 0.3),
+      axis.ticks        = element_line(linewidth = 0.3, colour = "grey50"),
+      axis.ticks.length = unit(0.12, "cm"),
+      axis.title        = element_text(size = 11),
+      axis.text         = element_text(size = 10),
+      plot.background   = element_rect(fill = "white", colour = "white")
+    )
+
+  make_panel <- function(data, x_col, y_col, x_lab, y_lab, axis_max) {
+    data <- ungroup(data)
+    ggplot(data, aes(x = .data[[x_col]], y = .data[[y_col]], colour = site)) +
+      geom_abline(intercept = 0, slope = 1, linetype = "dashed", colour = "grey40") +
+      geom_point(alpha = 0.7, size = 2) +
+      scale_x_continuous(limits = c(0, axis_max)) +
+      scale_y_continuous(limits = c(0, axis_max)) +
+      scale_colour_manual(values = site_colours, name = "Site") +
+      labs(x = x_lab, y = y_lab) +
+      panel_theme
+  }
+
+  p1 <- make_panel(ss_data,
+    x_col = "species_richness", y_col = "spectral_richness",
+    x_lab = "Species Richness",  y_lab = "Spectral Species Richness",
+    axis_max = 40)
+
+  p2 <- make_panel(ss_data,
+    x_col = "shannon_diversity", y_col = "shannon_spectral",
+    x_lab = "Shannon Diversity",  y_lab = "Spectral Shannon Diversity",
+    axis_max = 4)
+
+  p3 <- make_panel(ss_data,
+    x_col = "simpson_diversity", y_col = "simpson_spectral",
+    x_lab = "Simpson Diversity",  y_lab = "Spectral Simpson Diversity",
+    axis_max = 1)
+
+  (p1 + p2 + p3) +
+    patchwork::plot_layout(guides = "collect") &
+    theme(
+      legend.position   = "bottom",
+      legend.text       = element_text(size = 11),
+      legend.title      = element_text(size = 11),
+      legend.background = element_rect(colour = "grey40", fill = "white", linewidth = 0.4)
     )
 }
 

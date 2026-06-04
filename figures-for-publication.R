@@ -17,6 +17,7 @@ library(tidyverse)
 library(glmmTMB)        # for predict.glmmTMB dispatch on cached _mixed fits
 library(ggnewscale)
 library(ggh4x)
+library(patchwork)
 source("funx.R")
 
 metrics         <- readRDS("data_out/spectral_taxonomic_diversity.rds")
@@ -44,4 +45,18 @@ cv_bands_plot
 
 if (!dir.exists("maps_graphs")) dir.create("maps_graphs")
 ggsave("maps_graphs/masked_24_plot.png",          masked_24_plot, width = 9,  height = 8, dpi = 600)
-ggsave("maps_graphs/cv_band_combinations_plot.png", cv_bands_plot, width = 10, height = 4, dpi = 600)
+ggsave("maps_graphs/cv_band_combinations_plot.png", cv_bands_plot, width = 12, height = 4, dpi = 600)
+
+# Spectral-species figure
+survey_data  <- read_csv("data/ausplots_march_24.csv", show_col_types = FALSE)
+taxonomic_ss <- calculate_field_diversity(survey_data)$final_results %>%
+  select(subplot_id, site, species_richness, shannon_diversity, simpson_diversity)
+ss_spectral  <- readRDS("data_out/mean_spectral_species.rds") %>%
+  select(subplot_id, site, spectral_richness, shannon_spectral, simpson_spectral)
+ss_data <- ss_spectral %>%
+  left_join(taxonomic_ss, by = c("subplot_id", "site")) %>%
+  add_site_prefix()
+
+ss_figure <- make_figure_ss(ss_data)
+ss_figure
+ggsave("maps_graphs/ss_figure.png", ss_figure, width = 12, height = 4, dpi = 600)
